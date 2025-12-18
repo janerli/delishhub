@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "433786748186",
+    "project_id": "delishhub-b8dc8",
+    "storage_bucket": "delishhub-b8dc8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:433786748186:android:bb1d767267dafec12080a3",
+        "android_client_info": {
+          "package_name": "com.janerli.delishhub"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4R5_MSfi33jk3m8wVec6t7PE0ztiPWpA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
