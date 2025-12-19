@@ -52,6 +52,16 @@ interface RecipeRepository {
 
     suspend fun deleteRecipe(recipeId: String, hardDelete: Boolean)
 
+    // -------- ADMIN (добавили) --------
+
+    enum class AdminRecipesFilter { ALL, PUBLIC, PRIVATE, DELETED }
+
+    fun observeAllRecipesForAdmin(filter: AdminRecipesFilter): Flow<List<RecipeEntity>>
+
+    suspend fun setRecipePublic(recipeId: String, isPublic: Boolean)
+
+    suspend fun restoreRecipe(recipeId: String)
+
     // -------- Tags --------
 
     fun observeAllTags(): Flow<List<TagEntity>>

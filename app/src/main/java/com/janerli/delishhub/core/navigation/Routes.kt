@@ -19,7 +19,10 @@ object Routes {
     const val FAVORITES = "favorites"
     const val PLANNER = "planner"
     const val SHOPPING = "shopping"
+
     const val PROFILE = "profile"
+    const val PROFILE_EDIT = "profile_edit"
+
     const val ADMIN = "admin"
     const val EXPORT = "export"
     const val SETTINGS = "settings"

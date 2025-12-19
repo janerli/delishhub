@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 
@@ -34,17 +36,14 @@ import coil.compose.SubcomposeAsyncImage
 fun RecipeCard(
     item: RecipeCardUi,
     onOpen: (String) -> Unit,
-    onToggleFavorite: ((String) -> Unit)?
+    onToggleFavorite: ((String) -> Unit)? = null
 ) {
-    val shape = RoundedCornerShape(16.dp)
-
     Card(
         onClick = { onOpen(item.id) },
-        shape = shape,
+        shape = RoundedCornerShape(18.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         // ❗ВАЖНО: тут НЕ ДОЛЖНО быть fillMaxWidth(), иначе LazyRow будет делать квадрат
-        modifier = Modifier
-            .animateContentSize()
+        modifier = Modifier.animateContentSize()
     ) {
         Column {
 
@@ -59,77 +58,79 @@ fun RecipeCard(
                         model = item.imageUrl,
                         contentDescription = null,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(160.dp)
-                            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)),
+                        // ✅ главное: заполняем блок и обрезаем лишнее
                         contentScale = ContentScale.Crop,
                         loading = {
                             Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(160.dp),
+                                modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
                             ) { CircularProgressIndicator() }
                         },
                         error = {
                             Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(160.dp),
+                                modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
                             ) { Text("Не удалось загрузить фото") }
                         }
                     )
 
                     BadgesRow(
-                        isPublic = item.isPublic,
+                        // ✅ FIX: демо-рецепты (ownerId == "demo") показываем как PUBLIC
+                        isPublic = item.isPublic || item.ownerId == "demo",
                         isMine = item.isMine,
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(10.dp)
                     )
                 }
+            } else {
+                // Если фото нет — всё равно хотим видеть бейджи сверху карточки
+                BadgesRow(
+                    // ✅ FIX: демо-рецепты (ownerId == "demo") показываем как PUBLIC
+                    isPublic = item.isPublic || item.ownerId == "demo",
+                    isMine = item.isMine,
+                    modifier = Modifier
+                        .padding(start = 12.dp, top = 12.dp)
+                )
             }
 
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
 
-                // Если фото нет — бейджи показываем тут
-                if (item.imageUrl.isNullOrBlank()) {
-                    BadgesRow(
-                        isPublic = item.isPublic,
-                        isMine = item.isMine
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
+                Spacer(Modifier.height(6.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
+                    Icon(Icons.Filled.Schedule, contentDescription = null)
+                    Text(
+                        text = "${item.cookTimeMin} мин",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "Сложность ${item.difficulty}/5",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(Icons.Filled.Schedule, contentDescription = null)
-                                Text("${item.cookTimeMin} мин")
-                            }
-                            Text("Сложн: ${item.difficulty}/5")
-                        }
-                    }
+                    Spacer(Modifier.weight(1f))
 
                     if (onToggleFavorite != null) {
                         IconButton(onClick = { onToggleFavorite(item.id) }) {
                             Icon(
-                                imageVector = if (item.isFavorite)
-                                    Icons.Filled.Favorite
-                                else
-                                    Icons.Filled.FavoriteBorder,
-                                contentDescription = "Favorite"
+                                imageVector = if (item.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                contentDescription = null
                             )
                         }
                     }

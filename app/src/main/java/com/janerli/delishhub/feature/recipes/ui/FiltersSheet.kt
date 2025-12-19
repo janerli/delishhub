@@ -35,8 +35,8 @@ fun FiltersSheet(
     val maxDiff = remember { mutableStateOf(current.maxDifficulty?.toString().orEmpty()) }
     val onlyFav = remember { mutableStateOf(current.onlyFavorites) }
 
-    // ✅ теги
-    val selectedTagIds = remember { mutableStateOf(current.tagIds.toMutableSet()) }
+    // ✅ теги (ВАЖНО: дальше работаем только через КОПИИ, без мутаций того же объекта)
+    val selectedTagIds = remember { mutableStateOf(current.tagIds.toSet()) }
 
     Column(
         modifier = Modifier
@@ -110,9 +110,10 @@ fun FiltersSheet(
                     FilterChip(
                         selected = selected,
                         onClick = {
-                            val set = selectedTagIds.value
-                            if (selected) set.remove(tag.id) else set.add(tag.id)
-                            selectedTagIds.value = set
+                            // ✅ создаём новый Set -> Compose гарантированно увидит изменение
+                            selectedTagIds.value =
+                                if (selected) selectedTagIds.value - tag.id
+                                else selectedTagIds.value + tag.id
                         },
                         label = { Text(tag.name) }
                     )
@@ -144,7 +145,7 @@ fun FiltersSheet(
                         minDifficulty = toIntOrNull(minDiff.value),
                         maxDifficulty = toIntOrNull(maxDiff.value),
                         onlyFavorites = onlyFav.value,
-                        tagIds = selectedTagIds.value.toSet()
+                        tagIds = selectedTagIds.value
                     )
                     onApply(applied)
                 }

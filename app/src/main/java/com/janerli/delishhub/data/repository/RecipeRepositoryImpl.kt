@@ -75,7 +75,6 @@ class RecipeRepositoryImpl(
         val isFav = favoriteDao.isFavorite(userId, recipeId)
 
         if (isFav) {
-            // ✅ soft delete
             favoriteDao.removeFavorite(userId, recipeId, now)
         } else {
             val existing = favoriteDao.getNow(userId, recipeId)
@@ -128,6 +127,39 @@ class RecipeRepositoryImpl(
         else recipeDao.softDeleteRecipe(recipeId, System.currentTimeMillis())
     }
 
+    // ---------------- ADMIN ----------------
+
+    override fun observeAllRecipesForAdmin(
+        filter: RecipeRepository.AdminRecipesFilter
+    ): Flow<List<RecipeEntity>> {
+        // ✅ DAO теперь требует query + sort
+        return recipeDao.observeAllForAdmin(
+            filter = filter.name,
+            query = null,
+            sort = "UPDATED_DESC"
+        )
+    }
+
+    override suspend fun setRecipePublic(recipeId: String, isPublic: Boolean) {
+        recipeDao.setPublic(recipeId, isPublic, System.currentTimeMillis())
+
+        // помечаем как UPDATED для синка (если не CREATED/DELETED)
+        val existing = recipeDao.getRecipeBaseNow(recipeId) ?: return
+        if (existing.syncStatus != SyncStatus.CREATED && existing.syncStatus != SyncStatus.DELETED) {
+            recipeDao.upsertRecipe(
+                existing.copy(
+                    isPublic = isPublic,
+                    updatedAt = System.currentTimeMillis(),
+                    syncStatus = SyncStatus.UPDATED
+                )
+            )
+        }
+    }
+
+    override suspend fun restoreRecipe(recipeId: String) {
+        recipeDao.restoreRecipe(recipeId, System.currentTimeMillis())
+    }
+
     // ---------------- TAGS ----------------
 
     override fun observeAllTags(): Flow<List<TagEntity>> =
@@ -137,7 +169,6 @@ class RecipeRepositoryImpl(
         val clean = name.trim()
         if (clean.isBlank()) return
 
-        // не создаём дубль по имени
         val existing = tagDao.getByNameNow(clean)
         if (existing != null) return
 
@@ -179,7 +210,6 @@ class RecipeRepositoryImpl(
             else -> SyncStatus.UPDATED
         }
 
-        // ✅ если время не передали — НЕ затираем существующее
         val resolvedTime = timeMinutes ?: existing?.timeMinutes
 
         val entry = MealPlanEntryEntity(
@@ -206,7 +236,6 @@ class RecipeRepositoryImpl(
         val now = System.currentTimeMillis()
         val existing = mealPlanDao.getSlot(userId, dateEpochDay, mealType) ?: return
 
-        // не обновляем “удалённые” (пусть сначала назначат рецепт заново)
         if (existing.syncStatus == SyncStatus.DELETED) return
 
         val nextStatus = when (existing.syncStatus) {

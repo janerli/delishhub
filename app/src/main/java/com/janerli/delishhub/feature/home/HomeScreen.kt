@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -33,13 +34,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.janerli.delishhub.core.di.AppGraph
-import com.janerli.delishhub.core.notifications.NotificationsScheduler
+import com.janerli.delishhub.core.notifications.NotificationsPrefs
 import com.janerli.delishhub.core.session.SessionManager
 import com.janerli.delishhub.core.ui.MainScaffold
+import com.janerli.delishhub.data.notifications.MealPlanReminderScheduler
 import com.janerli.delishhub.feature.recipes.RecipesViewModel
 import com.janerli.delishhub.feature.recipes.RecipesViewModelFactory
 import com.janerli.delishhub.feature.recipes.ui.RecipeCard
 import com.janerli.delishhub.feature.recipes.ui.RecipeCardUi
+import java.time.LocalDate
+import kotlin.math.abs
+
+private const val DEMO_OWNER_ID = "demo"
 
 @Composable
 fun HomeScreen(navController: NavHostController) {
@@ -51,6 +57,9 @@ fun HomeScreen(navController: NavHostController) {
     ) {}
 
     LaunchedEffect(Unit) {
+        // ✅ если пользователь выключил уведомления — вообще ничего не планируем
+        if (!NotificationsPrefs.isEnabled(context)) return@LaunchedEffect
+
         if (Build.VERSION.SDK_INT >= 33) {
             val granted = ContextCompat.checkSelfPermission(
                 context,
@@ -59,13 +68,18 @@ fun HomeScreen(navController: NavHostController) {
 
             if (!granted) {
                 notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                // даже если не дали — воркеры сами “тихо” пропустят, но планируем по prefs
             }
         }
-        NotificationsScheduler.scheduleDailyMealPlanReminder(context)
+
+        // ✅ новый планировщик: daily + refresh now
+        MealPlanReminderScheduler.scheduleDaily(context)
+        MealPlanReminderScheduler.scheduleRefreshNow(context)
     }
 
     val session by SessionManager.session.collectAsStateWithLifecycle()
     val isGuest = session.isGuest
+    val myUid = session.userId
 
     var search by remember { mutableStateOf("") }
 
@@ -78,24 +92,30 @@ fun HomeScreen(navController: NavHostController) {
 
     val allCards: List<RecipeCardUi> by recipesVm.cards.collectAsStateWithLifecycle()
 
-    val feed = remember(allCards, session.userId) {
-        allCards.filter { it.isPublic || it.ownerId == session.userId }
+    val feed = remember(allCards, myUid) {
+        allCards.filter { it.isPublic || it.ownerId == myUid || it.ownerId == DEMO_OWNER_ID }
     }
 
     val q = search.trim()
     val filteredFeed = remember(feed, q) {
-        if (q.isEmpty()) feed else feed.filter {
-            it.title.contains(q, ignoreCase = true)
+        if (q.isEmpty()) feed else feed.filter { it.title.contains(q, ignoreCase = true) }
+    }
+
+    val my = remember(feed, myUid, isGuest) {
+        if (isGuest) emptyList() else feed.filter { it.ownerId == myUid }
+    }
+
+    val public = remember(feed) { feed.filter { it.isPublic || it.ownerId == DEMO_OWNER_ID } }
+
+    val todayKey = remember { LocalDate.now().toEpochDay().toInt() }
+
+    val recipeOfDay: RecipeCardUi? = remember(public, todayKey) {
+        if (public.isEmpty()) null else {
+            val idx = abs(todayKey) % public.size
+            public[idx]
         }
     }
 
-    val my = remember(feed, session.userId, isGuest) {
-        if (isGuest) emptyList() else feed.filter { it.ownerId == session.userId }
-    }
-
-    val public = remember(feed) { feed.filter { it.isPublic } }
-
-    // 👉 ширина карточки в LazyRow = ширина экрана минус горизонтальные паддинги
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
     val rowCardWidth = screenWidth - 32.dp
 
@@ -121,86 +141,58 @@ fun HomeScreen(navController: NavHostController) {
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Поиск по рецептам") },
                     leadingIcon = {
-                        androidx.compose.material3.Icon(
-                            Icons.Filled.Search,
-                            contentDescription = null
-                        )
+                        androidx.compose.material3.Icon(Icons.Filled.Search, contentDescription = null)
                     },
                     singleLine = true
                 )
             }
 
-            // Публичные
-            if (public.isNotEmpty()) {
-                item { SectionHeader("Публичные (${public.size})") }
+            if (recipeOfDay != null) {
+                item { SectionHeader("Рецепт дня") }
                 item {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(public.take(10), key = { "pub-${it.id}" }) { item ->
-                            Box(modifier = Modifier.width(rowCardWidth)) {
-                                RecipeCard(
-                                    item = item,
-                                    onOpen = { id ->
-                                        navController.navigate("recipe_details/$id")
-                                    },
-                                    onToggleFavorite = if (isGuest) null else {
-                                            id -> recipesVm.toggleFavorite(id)
-                                    }
-                                )
-                            }
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Box(modifier = Modifier.padding(10.dp)) {
+                            RecipeCard(
+                                item = recipeOfDay,
+                                onOpen = { id -> navController.navigate("recipe_details/$id") },
+                                onToggleFavorite = if (isGuest) null else { id -> recipesVm.toggleFavorite(id) }
+                            )
                         }
                     }
                 }
             }
 
-            // Мои
             if (!isGuest) {
                 item { SectionHeader("Мои (${my.size})") }
                 if (my.isNotEmpty()) {
                     item {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(my.take(10), key = { "my-${it.id}" }) { item ->
                                 Box(modifier = Modifier.width(rowCardWidth)) {
                                     RecipeCard(
                                         item = item,
-                                        onOpen = { id ->
-                                            navController.navigate("recipe_details/$id")
-                                        },
-                                        onToggleFavorite = {
-                                                id -> recipesVm.toggleFavorite(id)
-                                        }
+                                        onOpen = { id -> navController.navigate("recipe_details/$id") },
+                                        onToggleFavorite = { id -> recipesVm.toggleFavorite(id) }
                                     )
                                 }
                             }
                         }
                     }
                 } else {
-                    item {
-                        Text("Пока нет твоих рецептов. Создай первый 🙂")
-                    }
+                    item { Text("Пока нет твоих рецептов. Создай первый 🙂") }
                 }
             }
 
-            // Лента
             item { SectionHeader("Лента (${filteredFeed.size})") }
 
             if (filteredFeed.isEmpty()) {
-                item {
-                    Text("Ничего не найдено — попробуй другой запрос.")
-                }
+                item { Text("Ничего не найдено — попробуй другой запрос.") }
             } else {
                 items(filteredFeed, key = { "feed-${it.id}" }) { item ->
                     RecipeCard(
                         item = item,
-                        onOpen = { id ->
-                            navController.navigate("recipe_details/$id")
-                        },
-                        onToggleFavorite = if (isGuest) null else {
-                                id -> recipesVm.toggleFavorite(id)
-                        }
+                        onOpen = { id -> navController.navigate("recipe_details/$id") },
+                        onToggleFavorite = if (isGuest) null else { id -> recipesVm.toggleFavorite(id) }
                     )
                 }
             }

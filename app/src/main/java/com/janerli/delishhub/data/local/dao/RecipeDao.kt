@@ -126,6 +126,49 @@ interface RecipeDao {
         sort: String
     ): Flow<List<RecipeEntity>>
 
+    // ---------- ADMIN (обновили: filter + search + sort) ----------
+
+    /**
+     * filter: ALL | PUBLIC | PRIVATE | DELETED
+     * sort: UPDATED_DESC | UPDATED_ASC | TITLE_ASC | TITLE_DESC
+     */
+    @Query(
+        """
+        SELECT * FROM recipes
+        WHERE
+            (
+              (:filter = 'ALL')
+              OR (:filter = 'PUBLIC'  AND isPublic = 1 AND syncStatus != 3)
+              OR (:filter = 'PRIVATE' AND isPublic = 0 AND syncStatus != 3)
+              OR (:filter = 'DELETED' AND syncStatus = 3)
+            )
+          AND (
+              :query IS NULL OR :query = '' OR
+              title LIKE '%' || :query || '%' OR
+              ownerId LIKE '%' || :query || '%'
+          )
+        ORDER BY
+          CASE WHEN :sort = 'UPDATED_DESC' THEN updatedAt END DESC,
+          CASE WHEN :sort = 'UPDATED_ASC'  THEN updatedAt END ASC,
+          CASE WHEN :sort = 'TITLE_ASC'    THEN title END COLLATE NOCASE ASC,
+          CASE WHEN :sort = 'TITLE_DESC'   THEN title END COLLATE NOCASE DESC,
+          updatedAt DESC
+        """
+    )
+    fun observeAllForAdmin(
+        filter: String,
+        query: String?,
+        sort: String
+    ): Flow<List<RecipeEntity>>
+
+    @Query("UPDATE recipes SET isPublic = :isPublic, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun setPublic(id: String, isPublic: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE recipes SET syncStatus = 2, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun restoreRecipe(id: String, updatedAt: Long = System.currentTimeMillis())
+
+    // ---------- UPSERT ----------
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertRecipe(recipe: RecipeEntity)
 
@@ -181,7 +224,6 @@ interface RecipeDao {
         }
     }
 
-    // ✅ НОВОЕ: ids рецептов, у которых есть хотя бы один из выбранных тегов
     @Query(
         """
         SELECT DISTINCT recipeId

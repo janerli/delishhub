@@ -11,9 +11,11 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        // ВАЖНО: зависимости AndroidX (включая loader) тянутся отсюда
         google()
         mavenCentral()
     }
@@ -21,4 +23,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "DelishHub"
 include(":app")
- 

@@ -2,10 +2,15 @@ package com.janerli.delishhub.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Мы оставляем имена Purple*/Pink*, чтобы не ломать импорты,
+// но значения — новые (еда/fresh).
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// ---------- Dark (используются в DarkColorScheme) ----------
+val Purple80 = Color(0xFFFFA726)       // primary
+val PurpleGrey80 = Color(0xFF9CCC65)   // secondary
+val Pink80 = Color(0xFFD7CCC8)         // tertiary
+
+// ---------- Light (используются в LightColorScheme) ----------
+val Purple40 = Color(0xFFEF6C00)       // primary
+val PurpleGrey40 = Color(0xFF558B2F)   // secondary
+val Pink40 = Color(0xFF8D6E63)         // tertiary

@@ -1,76 +1,74 @@
 package com.janerli.delishhub.feature.profile
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Login
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.AdminPanelSettings
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.Login
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.RestaurantMenu
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import coil.compose.SubcomposeAsyncImage
+import com.janerli.delishhub.core.di.AppGraph
 import com.janerli.delishhub.core.navigation.Routes
 import com.janerli.delishhub.core.session.SessionManager
 import com.janerli.delishhub.core.ui.MainScaffold
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 @Composable
 fun ProfileScreen(navController: NavHostController) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val session by SessionManager.session.collectAsStateWithLifecycle()
     val isGuest = session.isGuest
     val isAdmin = session.isAdmin
+    val userId = session.userId
+    val userKey = if (isGuest) "guest" else userId
 
-    val displayName = if (isGuest) "Гость" else session.name.ifBlank { "Пользователь" }
-    val username = if (isGuest) "@guest" else "@${session.userId.take(8)}"
-    val email = if (isGuest) "—" else "—" // подключим после Firebase Auth
+    // ✅ профиль должен инициализироваться на текущего пользователя
+    ProfileStore.init(context, userKey)
 
-    // демо-статы (подключим к Room позже)
-    val myRecipesCount = if (isGuest) 0 else 0
-    val favoritesCount = if (isGuest) 0 else 0
-    val plannedCount = if (isGuest) 0 else 0
+    val avatarPath by ProfileStore.avatarPath.collectAsStateWithLifecycle()
+    val guestName by ProfileStore.guestDisplayName.collectAsStateWithLifecycle()
 
-    var showDialog by remember { mutableStateOf(false) }
-    var dialogText by remember { mutableStateOf("") }
+    val displayName = if (isGuest) {
+        guestName?.takeIf { it.isNotBlank() } ?: "Гость"
+    } else session.name.ifBlank { "Пользователь" }
+
+    val todayEpochDay = remember { LocalDate.now().toEpochDay() }
+
+    val myRecipesCount by AppGraph.recipeDao
+        .observeAllBase()
+        .map { list -> list.count { it.ownerId == userId && it.syncStatus != 3 } }
+        .collectAsStateWithLifecycle(initialValue = 0)
+
+    val favoritesCount by AppGraph.favoriteDao
+        .observeFavoriteRecipeIds(userId)
+        .map { it.size }
+        .collectAsStateWithLifecycle(initialValue = 0)
+
+    val plannedCount by AppGraph.mealPlanDao
+        .observeDay(userId, todayEpochDay)
+        .map { it.size }
+        .collectAsStateWithLifecycle(initialValue = 0)
+
+    val cs = MaterialTheme.colorScheme
 
     MainScaffold(
         navController = navController,
         title = "Профиль",
         showBack = false
-    ) { padding: PaddingValues ->
+    ) { padding ->
 
         Column(
             modifier = Modifier
@@ -80,183 +78,170 @@ fun ProfileScreen(navController: NavHostController) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-            // --- Верхняя карточка профиля ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Card(
-                                modifier = Modifier
-                                    .height(56.dp)
-                                    .aspectRatio(1f)
-                                    .clip(CircleShape),
-                                shape = CircleShape,
-                                elevation = CardDefaults.cardElevation(1.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalArrangement = Arrangement.Center,
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Icon(Icons.Filled.Person, contentDescription = null)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.padding(8.dp))
-
-                            Column {
-                                Text(displayName, style = MaterialTheme.typography.titleMedium)
-                                Text(username, style = MaterialTheme.typography.bodyMedium)
-                                Text(email, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-
-                        IconButton(onClick = {
-                            dialogText =
-                                "Редактирование профиля будет доступно после подключения Firebase Auth (шаг 6)."
-                            showDialog = true
-                        }) {
-                            Icon(Icons.Filled.Edit, contentDescription = "Edit")
-                        }
-                    }
-
-                    if (isGuest) {
-                        Text(
-                            "Сейчас вы в режиме гостя. Войдите, чтобы сохранять рецепты, планы и избранное.",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-
-            // --- Статистика ---
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(2.dp)
+                colors = CardDefaults.cardColors(containerColor = cs.surfaceVariant)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    StatItem(title = "Мои", value = myRecipesCount.toString())
-                    StatItem(title = "Избранное", value = favoritesCount.toString())
-                    StatItem(title = "Планы", value = plannedCount.toString())
+                    Card(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape),
+                        shape = CircleShape,
+                        colors = CardDefaults.cardColors(containerColor = cs.surface)
+                    ) {
+                        if (!avatarPath.isNullOrBlank()) {
+                            SubcomposeAsyncImage(
+                                model = avatarPath,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                Icons.Filled.Person,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(12.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = if (isGuest) "Гостевой режим" else (session.email ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = cs.onSurfaceVariant
+                        )
+                    }
+
+                    IconButton(onClick = { navController.navigate(Routes.PROFILE_EDIT) }) {
+                        Icon(Icons.Filled.Edit, contentDescription = "Редактировать")
+                    }
                 }
             }
 
-            // --- Быстрые действия ---
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = cs.surfaceVariant,
+                        contentColor = cs.onSurface
+                    ),
+                    onClick = { navController.navigate(Routes.MY_RECIPES) }
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.MenuBook, null)
+                    Text(" $myRecipesCount")
+                }
+
+                FilledTonalButton(
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = cs.surfaceVariant,
+                        contentColor = cs.onSurface
+                    ),
+                    onClick = { navController.navigate(Routes.FAVORITES) }
+                ) {
+                    Icon(Icons.Filled.Favorite, null)
+                    Text(" $favoritesCount")
+                }
+            }
+
+            FilledTonalButton(
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = cs.surfaceVariant,
+                    contentColor = cs.onSurface
+                ),
+                onClick = { navController.navigate(Routes.PLANNER) }
+            ) {
+                Text("Планов сегодня: $plannedCount")
+            }
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(2.dp)
+                colors = CardDefaults.cardColors(containerColor = cs.surfaceVariant)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-
-                    if (!isGuest) {
-                        FilledTonalButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { navController.navigate(Routes.MY_RECIPES) }
-                        ) {
-                            Icon(Icons.Filled.RestaurantMenu, contentDescription = null)
-                            Text(" Мои рецепты")
-                        }
-
-                        FilledTonalButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { navController.navigate(Routes.FAVORITES) }
-                        ) {
-                            Icon(Icons.Filled.Favorite, contentDescription = null)
-                            Text(" Избранное")
-                        }
-                    }
-
                     FilledTonalButton(
                         modifier = Modifier.fillMaxWidth(),
-                        onClick = { navController.navigate(Routes.SETTINGS) }
-                    ) {
-                        Icon(Icons.Filled.Settings, contentDescription = null)
-                        Text(" Настройки")
-                    }
-
-                    FilledTonalButton(
-                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = cs.surface,
+                            contentColor = cs.onSurface
+                        ),
                         onClick = { navController.navigate(Routes.EXPORT) }
                     ) {
-                        Icon(Icons.Filled.FileUpload, contentDescription = null)
-                        Text(" Экспорт / Поделиться")
+                        Icon(Icons.Filled.FileUpload, null)
+                        Text(" Экспорт")
+                    }
+
+                    FilledTonalButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = cs.surface,
+                            contentColor = cs.onSurface
+                        ),
+                        onClick = { navController.navigate(Routes.SETTINGS) }
+                    ) {
+                        Icon(Icons.Filled.Settings, null)
+                        Text(" Настройки")
                     }
 
                     if (isAdmin) {
                         FilledTonalButton(
                             modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = cs.surface,
+                                contentColor = cs.onSurface
+                            ),
                             onClick = { navController.navigate(Routes.ADMIN) }
                         ) {
-                            Icon(Icons.Filled.AdminPanelSettings, contentDescription = null)
-                            Text(" Admin")
+                            Icon(Icons.Filled.AdminPanelSettings, null)
+                            Text(" Админ-панель")
                         }
-                    }
-
-                    // --- ВХОД ---
-                    if (isGuest) {
-                        FilledTonalButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { navController.navigate(Routes.LOGIN) }
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null)
-                            Text(" Войти")
-                        }
-                    }
-
-                    // ✅ --- ВЫХОД: ВСЕГДА ---
-                    FilledTonalButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            SessionManager.signOut()
-                            navController.navigate(Routes.SPLASH) {
-                                popUpTo(0) { inclusive = true } // полностью чистим back stack
-                                launchSingleTop = true
-                            }
-                        }
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
-                        Text(" Выйти")
                     }
                 }
             }
-        }
 
-        if (showDialog) {
-            AlertDialog(
-                onDismissRequest = { showDialog = false },
-                title = { Text("Информация") },
-                text = { Text(dialogText) },
-                confirmButton = {
-                    TextButton(onClick = { showDialog = false }) { Text("ОК") }
+            Spacer(Modifier.height(8.dp))
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = cs.errorContainer,
+                    contentColor = cs.onErrorContainer
+                ),
+                onClick = {
+                    scope.launch {
+                        if (isGuest) {
+                            // ✅ очищаем только guest-данные
+                            ProfileStore.clear(context, "guest")
+                            SessionManager.setGuest()
+                        } else {
+                            SessionManager.signOut()
+                        }
+
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(Routes.HOME) { inclusive = true }
+                        }
+                    }
                 }
-            )
+            ) {
+                Text(if (isGuest) "Выйти из гостевого режима" else "Выйти")
+            }
         }
-    }
-}
-
-@Composable
-private fun StatItem(title: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleLarge)
-        Text(title, style = MaterialTheme.typography.bodyMedium)
     }
 }

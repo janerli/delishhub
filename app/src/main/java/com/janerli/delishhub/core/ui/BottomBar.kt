@@ -7,8 +7,10 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RestaurantMenu
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,7 +35,6 @@ fun BottomBar(navController: NavHostController) {
         add(BottomItem(Routes.HOME, "Главная") { Icon(Icons.Filled.Home, contentDescription = null) })
         add(BottomItem(Routes.RECIPES, "Рецепты") { Icon(Icons.Filled.RestaurantMenu, contentDescription = null) })
 
-        // ✅ для гостя скрываем всё “персональное”
         if (!isGuest) {
             add(BottomItem(Routes.PLANNER, "План") { Icon(Icons.Filled.CalendarMonth, contentDescription = null) })
             add(BottomItem(Routes.SHOPPING, "Покупки") { Icon(Icons.Filled.ShoppingCart, contentDescription = null) })
@@ -42,9 +43,14 @@ fun BottomBar(navController: NavHostController) {
         add(BottomItem(Routes.PROFILE, "Профиль") { Icon(Icons.Filled.Person, contentDescription = null) })
     }
 
-    NavigationBar {
+    val cs = MaterialTheme.colorScheme
+
+    NavigationBar(
+        containerColor = cs.surface
+    ) {
         items.forEach { item ->
             val selected = currentRoute == item.route
+
             NavigationBarItem(
                 selected = selected,
                 onClick = {
@@ -55,7 +61,14 @@ fun BottomBar(navController: NavHostController) {
                     }
                 },
                 icon = item.icon,
-                label = { Text(item.label) }
+                label = { Text(item.label) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = cs.primary,
+                    selectedTextColor = cs.primary,
+                    indicatorColor = cs.secondaryContainer, // ✅ было surfaceVariant (фиолетило)
+                    unselectedIconColor = cs.onSurfaceVariant,
+                    unselectedTextColor = cs.onSurfaceVariant
+                )
             )
         }
     }

@@ -1,6 +1,7 @@
 package com.janerli.delishhub.feature.auth
 
 import android.app.Activity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +56,11 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+
+    // ✅ FIX: системный back = тот же onBack (вернём на онбординг)
+    BackHandler(enabled = true) {
+        if (!loading) onBack()
+    }
 
     val googleLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -210,7 +216,6 @@ fun LoginScreen(
                         }
                     }
 
-                    // --- Google Sign-In ---
                     Button(
                         enabled = !loading,
                         onClick = {

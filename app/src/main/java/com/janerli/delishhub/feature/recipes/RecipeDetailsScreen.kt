@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -40,9 +41,11 @@ import coil.compose.SubcomposeAsyncImage
 import com.janerli.delishhub.core.di.AppGraph
 import com.janerli.delishhub.core.navigation.Routes
 import com.janerli.delishhub.core.session.SessionManager
+import com.janerli.delishhub.core.share.ShareHelper
 import com.janerli.delishhub.core.ui.MainScaffold
 import com.janerli.delishhub.data.local.entity.IngredientEntity
 import com.janerli.delishhub.data.local.entity.StepEntity
+import com.janerli.delishhub.feature.export.RecipeExportManager
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -50,6 +53,8 @@ fun RecipeDetailsScreen(
     navController: NavHostController,
     recipeId: String
 ) {
+    val context = LocalContext.current
+
     val vm: RecipeDetailsViewModel = viewModel(
         factory = RecipeDetailsViewModelFactory(
             repository = AppGraph.recipeRepository,
@@ -137,7 +142,7 @@ fun RecipeDetailsScreen(
                 style = MaterialTheme.typography.bodyMedium
             )
 
-            // ✅ ТЕГИ
+            // Теги
             if (full.tags.isNotEmpty()) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -147,7 +152,7 @@ fun RecipeDetailsScreen(
                         .sortedBy { it.name.lowercase() }
                         .forEach { tag ->
                             AssistChip(
-                                onClick = { /* позже можно сделать переход к фильтру */ },
+                                onClick = { },
                                 label = { Text(tag.name) },
                                 colors = AssistChipDefaults.assistChipColors()
                             )
@@ -181,9 +186,15 @@ fun RecipeDetailsScreen(
                 }
             }
 
-            FilledTonalButton(onClick = { /* позже: share/export */ }) {
+            // ✅ Экспорт PDF + Share
+            FilledTonalButton(
+                onClick = {
+                    val result = RecipeExportManager.exportRecipeToPdf(context, full)
+                    ShareHelper.sharePdf(context, result.file, chooserTitle = "Поделиться рецептом")
+                }
+            ) {
                 Icon(Icons.Filled.Share, contentDescription = null)
-                Text(" Поделиться")
+                Text(" Поделиться (PDF)")
             }
 
             Card(

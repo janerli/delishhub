@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "433786748186-hu8o3f2vrq5o9dn9o44np05otiqfnsjd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.janerli.delishhub",
+            "certificate_hash": "ae4053abcd17bd0ea1631691d4d5329599ee63cb"
+          }
+        },
+        {
           "client_id": "433786748186-nuef5s0kbtup40028dlpe4rgglmves8m.apps.googleusercontent.com",
           "client_type": 3
         }

@@ -16,14 +16,15 @@ import com.janerli.delishhub.feature.export.ExportScreen
 import com.janerli.delishhub.feature.favorites.FavoritesScreen
 import com.janerli.delishhub.feature.home.HomeScreen
 import com.janerli.delishhub.feature.planner.PlannerScreen
+import com.janerli.delishhub.feature.profile.AccountScreen
+import com.janerli.delishhub.feature.profile.ProfileEditScreen
 import com.janerli.delishhub.feature.profile.ProfileScreen
+import com.janerli.delishhub.feature.profile.SettingsScreen
 import com.janerli.delishhub.feature.recipes.RecipeCreateScreen
 import com.janerli.delishhub.feature.recipes.RecipeDetailsScreen
 import com.janerli.delishhub.feature.recipes.RecipeEditScreen
 import com.janerli.delishhub.feature.recipes.RecipesScreen
 import com.janerli.delishhub.feature.shopping.ShoppingScreen
-import com.janerli.delishhub.feature.profile.AccountScreen
-import com.janerli.delishhub.feature.profile.SettingsScreen
 
 @Composable
 fun AppNavGraph() {
@@ -62,7 +63,13 @@ fun AppNavGraph() {
                         popUpTo(Routes.LOGIN) { inclusive = true }
                     }
                 },
-                onBack = { navController.popBackStack() },
+                // ✅ FIX: всегда возвращаем на онбординг, даже если login открыт со Splash
+                onBack = {
+                    navController.navigate(Routes.ONBOARDING) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
                 onForgot = { navController.navigate(Routes.FORGOT_PASSWORD) }
             )
         }
@@ -118,9 +125,22 @@ fun AppNavGraph() {
         }
 
         // Secondary
-        composable(Routes.ADMIN) { AdminScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.EXPORT) { ExportScreen(onBack = { navController.popBackStack() }) }
+        composable(Routes.ADMIN) {
+            AdminScreen(
+                navController = navController,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.EXPORT) {
+            ExportScreen(
+                navController = navController,
+                onBack = { navController.popBackStack() }
+            )
+        }
         composable(Routes.SETTINGS) { SettingsScreen(navController) }
         composable(Routes.ACCOUNT) { AccountScreen(navController) }
+
+        composable(Routes.PROFILE_EDIT) { ProfileEditScreen(navController) }
     }
 }

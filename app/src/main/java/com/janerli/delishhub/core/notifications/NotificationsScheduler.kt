@@ -13,10 +13,12 @@ import java.util.concurrent.TimeUnit
 object NotificationsScheduler {
 
     /**
-     * Ежедневное напоминание в 09:00 (локальное время устройства).
-     * WorkManager не гарантирует “в секунду”, но для учебного проекта идеально.
+     * Legacy периодик на 09:00.
+     * ✅ Теперь уважает настройку NotificationsPrefs (если выключено — ничего не ставим).
      */
     fun scheduleDailyMealPlanReminder(context: Context) {
+        if (!NotificationsPrefs.isEnabled(context)) return
+
         NotificationHelper.ensureChannels(context)
 
         val delay = initialDelayToNext(LocalTime.of(9, 0))
@@ -32,7 +34,13 @@ object NotificationsScheduler {
         )
     }
 
+    fun cancelDailyMealPlanReminder(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(MealPlanReminderWorker.UNIQUE_NAME_DAILY)
+    }
+
     fun enqueueTestNow(context: Context) {
+        if (!NotificationsPrefs.isEnabled(context)) return
+
         NotificationHelper.ensureChannels(context)
         NotificationHelper.showMealPlanNotification(
             context = context,

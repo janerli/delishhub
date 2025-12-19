@@ -16,6 +16,9 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        // ✅ нужно для androidTest
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildFeatures { compose = true }
@@ -24,7 +27,6 @@ android {
         kotlinCompilerExtensionVersion = "1.5.15"
     }
 
-    // ✅ фикс KSP: Java и Kotlin одинаковый target
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -48,13 +50,12 @@ dependencies {
     implementation(libs.androidx.material3)
     debugImplementation(libs.androidx.ui.tooling)
 
-    // ✅ icons-extended (чинит CalendarMonth/Logout/Schedule/PhotoCamera и т.д.)
+    // Icons (extended)
     implementation(libs.androidx.compose.material.icons.extended)
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-
     implementation(libs.androidx.core.ktx)
 
     // Room
@@ -76,8 +77,16 @@ dependencies {
     // Google Sign-In
     implementation(libs.play.services.auth)
 
-    // Tests
+    // -------------------
+    // ✅ TESTS (по твоему catalog)
+    // -------------------
     testImplementation(libs.junit)
+
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    // Compose UI tests
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
+    debugImplementation(libs.androidx.ui.test.manifest)
 }

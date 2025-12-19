@@ -1,22 +1,86 @@
 package com.janerli.delishhub.feature.admin
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
+import com.janerli.delishhub.core.session.SessionManager
+import com.janerli.delishhub.core.ui.MainScaffold
 
 @Composable
-fun AdminScreen(onBack: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+fun AdminScreen(
+    navController: NavHostController,
+    onBack: () -> Unit
+) {
+    val session by SessionManager.session.collectAsStateWithLifecycle()
+
+    // 🔒 защита
+    if (!session.isAdmin) {
+        MainScaffold(
+            navController = navController,
+            title = "Доступ запрещён",
+            showBack = true,
+            onBack = onBack
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("У вас нет прав администратора")
+            }
+        }
+        return
+    }
+
+    // ✅ Variant 2 — холодный акцент только для админки
+    val adminScheme = MaterialTheme.colorScheme.copy(
+        primary = Color(0xFF5C6BC0),    // indigo
+        secondary = Color(0xFF26A69A),  // teal
+        tertiary = Color(0xFF7E57C2)    // purple
+    )
+
+    // ⚠️ ВАЖНО: typography берём из текущей темы
+    MaterialTheme(
+        colorScheme = adminScheme,
+        typography = MaterialTheme.typography
     ) {
-        Text("Admin (модерация — позже)")
-        Button(onClick = onBack) { Text("Назад") }
+        var tabIndex by remember { mutableIntStateOf(0) }
+        val tabs = listOf("Рецепты", "Теги")
+
+        MainScaffold(
+            navController = navController,
+            title = "Админ-панель",
+            showBack = true,
+            onBack = onBack
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                TabRow(selectedTabIndex = tabIndex) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = tabIndex == index,
+                            onClick = { tabIndex = index },
+                            text = { Text(title) }
+                        )
+                    }
+                }
+
+                when (tabIndex) {
+                    0 -> AdminRecipesScreen()
+                    1 -> AdminTagsScreen()
+                }
+            }
+        }
     }
 }
