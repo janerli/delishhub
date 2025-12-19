@@ -123,8 +123,14 @@ class RecipeRepositoryImpl(
     }
 
     override suspend fun deleteRecipe(recipeId: String, hardDelete: Boolean) {
-        if (hardDelete) recipeDao.hardDeleteRecipeDeep(recipeId)
-        else recipeDao.softDeleteRecipe(recipeId, System.currentTimeMillis())
+        /**
+         * ✅ FIX (важно для админ-удаления):
+         * Никогда не делаем hard delete из репозитория, иначе синк не увидит удаление
+         * и не отправит isDeleted=true в Firestore.
+         *
+         * Физическое удаление делается позже в SyncWorker после успешной отправки DELETED.
+         */
+        recipeDao.softDeleteRecipe(recipeId, System.currentTimeMillis())
     }
 
     // ---------------- ADMIN ----------------
@@ -132,7 +138,6 @@ class RecipeRepositoryImpl(
     override fun observeAllRecipesForAdmin(
         filter: RecipeRepository.AdminRecipesFilter
     ): Flow<List<RecipeEntity>> {
-        // ✅ DAO теперь требует query + sort
         return recipeDao.observeAllForAdmin(
             filter = filter.name,
             query = null,
@@ -143,7 +148,6 @@ class RecipeRepositoryImpl(
     override suspend fun setRecipePublic(recipeId: String, isPublic: Boolean) {
         recipeDao.setPublic(recipeId, isPublic, System.currentTimeMillis())
 
-        // помечаем как UPDATED для синка (если не CREATED/DELETED)
         val existing = recipeDao.getRecipeBaseNow(recipeId) ?: return
         if (existing.syncStatus != SyncStatus.CREATED && existing.syncStatus != SyncStatus.DELETED) {
             recipeDao.upsertRecipe(

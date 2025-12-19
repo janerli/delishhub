@@ -20,8 +20,8 @@ import kotlinx.coroutines.launch
 
 private enum class AdminFilter(val label: String) {
     ALL("Все"),
-    PUBLIC("Public"),
-    PRIVATE("Private"),
+    PUBLIC("Публичные"),
+    PRIVATE("Приватные"),
     DELETED("Удалённые")
 }
 

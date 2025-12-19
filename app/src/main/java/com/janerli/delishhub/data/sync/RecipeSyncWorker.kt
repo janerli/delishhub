@@ -31,6 +31,9 @@ class RecipeSyncWorker(
         private const val KEY_LAST_PULL_OWN_AT = "last_pull_own_at"
         private const val KEY_LAST_PULL_PUBLIC_AT = "last_pull_public_at"
 
+        // ❗ тот же админ, что и в SessionManager
+        private const val ADMIN_EMAIL = "admin@mail.ru"
+
         fun defaultConstraints(): Constraints =
             Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -40,6 +43,8 @@ class RecipeSyncWorker(
     override suspend fun doWork(): Result {
         val user = FirebaseAuth.getInstance().currentUser
         val uid: String? = user?.uid
+        val email = user?.email
+        val isAdmin = !email.isNullOrBlank() && email.equals(ADMIN_EMAIL, ignoreCase = true)
 
         val firestore = FirebaseFirestore.getInstance()
 
@@ -54,25 +59,32 @@ class RecipeSyncWorker(
         val recipeDao = db.recipeDao()
 
         return try {
+            val isInitialPull = recipeDao.countNotDeletedNow() == 0
+
             var uploaded = 0
             var pulledOwn = 0
             val pulledPublic: Int
 
-            // 1) upload/pull own recipes ONLY if logged in
+            // upload pending
             if (uid != null) {
-                uploaded = uploadPending(uid, firestore, recipeDao)
-                pulledOwn = pullOwnUpdates(uid, firestore, recipeDao)
+                uploaded = uploadPending(uid, isAdmin, firestore, recipeDao)
+                pulledOwn = pullOwnUpdates(uid, firestore, recipeDao, isInitialPull)
             }
 
-            // 2) pull public recipes for everyone (including guest)
-            pulledPublic = pullPublicUpdates(firestore, recipeDao)
+            // public pull
+            pulledPublic = pullPublicUpdates(firestore, recipeDao, isInitialPull)
 
             Result.success(
                 workDataOf(
                     "uploaded" to uploaded,
                     "pulled_own" to pulledOwn,
                     "pulled_public" to pulledPublic,
-                    "mode" to (if (uid == null) "guest_public_only" else "user")
+                    "initial_pull" to isInitialPull,
+                    "mode" to when {
+                        uid == null -> "guest"
+                        isAdmin -> "admin"
+                        else -> "user"
+                    }
                 )
             )
         } catch (_: Exception) {
@@ -83,11 +95,14 @@ class RecipeSyncWorker(
     }
 
     // ---------------------------------------------------------------------
-    // Upload: local -> Firestore (ONLY own recipes)
+    // Upload: local -> Firestore
+    // User: только свои
+    // Admin: любые (включая чужие DELETED / UPDATED)
     // ---------------------------------------------------------------------
 
     private suspend fun uploadPending(
         uid: String,
+        isAdmin: Boolean,
         firestore: FirebaseFirestore,
         recipeDao: RecipeDao
     ): Int {
@@ -100,9 +115,11 @@ class RecipeSyncWorker(
             val full = recipeDao.getRecipeFull(base.id) ?: continue
             val recipe = full.recipe
 
-            // safety: never upload чужие
-            if (recipe.ownerId != uid) {
-                // если вдруг локально оказалась чужая запись как pending — просто пометим synced, чтобы не зацикливаться
+            val canUpload =
+                recipe.ownerId == uid || isAdmin
+
+            if (!canUpload) {
+                // обычный пользователь не может пушить чужое
                 recipeDao.markSynced(recipe.id)
                 continue
             }
@@ -111,7 +128,7 @@ class RecipeSyncWorker(
 
             val payload = hashMapOf<String, Any?>(
                 "id" to recipe.id,
-                "ownerId" to uid,
+                "ownerId" to recipe.ownerId,
                 "title" to recipe.title,
                 "description" to recipe.description,
                 "categoryId" to recipe.categoryId,
@@ -167,31 +184,40 @@ class RecipeSyncWorker(
     }
 
     // ---------------------------------------------------------------------
-    // Pull own: Firestore -> local (ONLY ownerId == uid)
+    // Pull own
     // ---------------------------------------------------------------------
 
     private suspend fun pullOwnUpdates(
         uid: String,
         firestore: FirebaseFirestore,
-        recipeDao: RecipeDao
+        recipeDao: RecipeDao,
+        isInitialPull: Boolean
     ): Int {
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val lastPullAt = prefs.getLong(KEY_LAST_PULL_OWN_AT, 0L)
 
-        val snap = firestore.collection("recipes")
+        val query = firestore.collection("recipes")
             .whereEqualTo("ownerId", uid)
-            .whereGreaterThan("updatedAt", lastPullAt)
-            .get()
-            .await()
+            .let { q ->
+                if (isInitialPull) q else q.whereGreaterThan("updatedAt", lastPullAt)
+            }
+
+        val snap = query.get().await()
 
         var pulled = 0
-        var maxUpdatedAt = lastPullAt
+        var maxUpdatedAt = if (isInitialPull) 0L else lastPullAt
 
         for (doc in snap.documents) {
             val id = doc.getString("id") ?: doc.id
+            val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
             val isDeleted = doc.getBoolean("isDeleted") ?: false
-            val updatedAt = doc.getLong("updatedAt") ?: 0L
-            if (updatedAt > maxUpdatedAt) maxUpdatedAt = updatedAt
+
+            if (remoteUpdatedAt > maxUpdatedAt) maxUpdatedAt = remoteUpdatedAt
+
+            val local = recipeDao.getRecipeBaseNow(id)
+            if (local != null && local.syncStatus != SyncStatus.SYNCED && local.updatedAt > remoteUpdatedAt) {
+                continue
+            }
 
             if (isDeleted) {
                 recipeDao.hardDeleteRecipeDeep(id)
@@ -201,8 +227,8 @@ class RecipeSyncWorker(
 
             val recipe = mapDocToRecipeEntity(
                 docId = id,
-                ownerId = uid,
-                docOwnerId = doc.getString("ownerId") ?: uid,
+                ownerIdFallback = uid,
+                docOwnerId = doc.getString("ownerId"),
                 docTitle = doc.getString("title"),
                 docDescription = doc.getString("description"),
                 docCategoryId = doc.getString("categoryId"),
@@ -218,7 +244,8 @@ class RecipeSyncWorker(
                 docRatingsCount = doc.getLong("ratingsCount"),
                 docMainImageUrl = doc.getString("mainImageUrl"),
                 docCreatedAt = doc.getLong("createdAt"),
-                updatedAt = updatedAt
+                updatedAt = remoteUpdatedAt,
+                syncStatus = SyncStatus.SYNCED
             )
 
             val ingredients = mapDocToIngredients(id, doc.get("ingredients"))
@@ -236,34 +263,41 @@ class RecipeSyncWorker(
     }
 
     // ---------------------------------------------------------------------
-    // Pull public: Firestore -> local (isPublic == true)
-    // Works for guest too (rules must allow read for public)
+    // Pull public
     // ---------------------------------------------------------------------
 
     private suspend fun pullPublicUpdates(
         firestore: FirebaseFirestore,
-        recipeDao: RecipeDao
+        recipeDao: RecipeDao,
+        isInitialPull: Boolean
     ): Int {
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val lastPullAt = prefs.getLong(KEY_LAST_PULL_PUBLIC_AT, 0L)
 
-        val snap = firestore.collection("recipes")
+        val query = firestore.collection("recipes")
             .whereEqualTo("isPublic", true)
-            .whereGreaterThan("updatedAt", lastPullAt)
-            .get()
-            .await()
+            .let { q ->
+                if (isInitialPull) q else q.whereGreaterThan("updatedAt", lastPullAt)
+            }
+
+        val snap = query.get().await()
 
         var pulled = 0
-        var maxUpdatedAt = lastPullAt
+        var maxUpdatedAt = if (isInitialPull) 0L else lastPullAt
 
         for (doc in snap.documents) {
             val id = doc.getString("id") ?: doc.id
+            val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
             val isDeleted = doc.getBoolean("isDeleted") ?: false
-            val updatedAt = doc.getLong("updatedAt") ?: 0L
-            if (updatedAt > maxUpdatedAt) maxUpdatedAt = updatedAt
+
+            if (remoteUpdatedAt > maxUpdatedAt) maxUpdatedAt = remoteUpdatedAt
+
+            val local = recipeDao.getRecipeBaseNow(id)
+            if (local != null && local.syncStatus != SyncStatus.SYNCED && local.updatedAt > remoteUpdatedAt) {
+                continue
+            }
 
             if (isDeleted) {
-                // если рецепт снят/удалён на сервере — удаляем локально
                 recipeDao.hardDeleteRecipeDeep(id)
                 pulled++
                 continue
@@ -273,7 +307,7 @@ class RecipeSyncWorker(
 
             val recipe = mapDocToRecipeEntity(
                 docId = id,
-                ownerId = ownerId,
+                ownerIdFallback = ownerId,
                 docOwnerId = ownerId,
                 docTitle = doc.getString("title"),
                 docDescription = doc.getString("description"),
@@ -290,20 +324,15 @@ class RecipeSyncWorker(
                 docRatingsCount = doc.getLong("ratingsCount"),
                 docMainImageUrl = doc.getString("mainImageUrl"),
                 docCreatedAt = doc.getLong("createdAt"),
-                updatedAt = updatedAt
+                updatedAt = remoteUpdatedAt,
+                syncStatus = SyncStatus.SYNCED
             )
 
             val ingredients = mapDocToIngredients(id, doc.get("ingredients"))
             val steps = mapDocToSteps(id, doc.get("steps"))
             val tagIds = (doc.get("tagIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
 
-            // public рецепты всегда SYNCED локально (нельзя править “как свои”)
-            recipeDao.upsertRecipeFull(
-                recipe.copy(syncStatus = SyncStatus.SYNCED),
-                ingredients,
-                steps,
-                tagIds
-            )
+            recipeDao.upsertRecipeFull(recipe, ingredients, steps, tagIds)
             recipeDao.markSynced(id)
 
             pulled++
@@ -319,7 +348,7 @@ class RecipeSyncWorker(
 
     private fun mapDocToRecipeEntity(
         docId: String,
-        ownerId: String,
+        ownerIdFallback: String,
         docOwnerId: String?,
         docTitle: String?,
         docDescription: String?,
@@ -336,11 +365,12 @@ class RecipeSyncWorker(
         docRatingsCount: Long?,
         docMainImageUrl: String?,
         docCreatedAt: Long?,
-        updatedAt: Long
-    ): RecipeEntity {
-        return RecipeEntity(
+        updatedAt: Long,
+        syncStatus: Int
+    ): RecipeEntity =
+        RecipeEntity(
             id = docId,
-            ownerId = docOwnerId ?: ownerId,
+            ownerId = docOwnerId ?: ownerIdFallback,
             title = docTitle ?: "",
             description = docDescription ?: "",
             categoryId = docCategoryId,
@@ -357,9 +387,8 @@ class RecipeSyncWorker(
             mainImageUrl = docMainImageUrl,
             createdAt = docCreatedAt ?: System.currentTimeMillis(),
             updatedAt = updatedAt,
-            syncStatus = SyncStatus.SYNCED
+            syncStatus = syncStatus
         )
-    }
 
     private fun mapDocToIngredients(recipeId: String, raw: Any?): List<IngredientEntity> {
         val list = raw as? List<*> ?: return emptyList()

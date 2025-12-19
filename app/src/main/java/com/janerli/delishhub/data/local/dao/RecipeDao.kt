@@ -15,6 +15,14 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface RecipeDao {
 
+    // ✅ Добавили для initial pull (определить “пустую базу”)
+    @Query("SELECT COUNT(*) FROM recipes")
+    suspend fun countAllNow(): Int
+
+    // ✅ Считаем “живые” (не удалённые) рецепты — это лучше, чем просто COUNT(*)
+    @Query("SELECT COUNT(*) FROM recipes WHERE syncStatus != 3")
+    suspend fun countNotDeletedNow(): Int
+
     @Query("SELECT * FROM recipes WHERE syncStatus != 3")
     fun observeAllBase(): Flow<List<RecipeEntity>>
 
@@ -83,7 +91,6 @@ interface RecipeDao {
         sort: String
     ): Flow<List<RecipeEntity>>
 
-    // ✅ ВАЖНО: f.syncStatus != 3
     @Query(
         """
         SELECT DISTINCT r.* FROM recipes r
@@ -126,12 +133,6 @@ interface RecipeDao {
         sort: String
     ): Flow<List<RecipeEntity>>
 
-    // ---------- ADMIN (обновили: filter + search + sort) ----------
-
-    /**
-     * filter: ALL | PUBLIC | PRIVATE | DELETED
-     * sort: UPDATED_DESC | UPDATED_ASC | TITLE_ASC | TITLE_DESC
-     */
     @Query(
         """
         SELECT * FROM recipes
@@ -166,8 +167,6 @@ interface RecipeDao {
 
     @Query("UPDATE recipes SET syncStatus = 2, updatedAt = :updatedAt WHERE id = :id")
     suspend fun restoreRecipe(id: String, updatedAt: Long = System.currentTimeMillis())
-
-    // ---------- UPSERT ----------
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertRecipe(recipe: RecipeEntity)

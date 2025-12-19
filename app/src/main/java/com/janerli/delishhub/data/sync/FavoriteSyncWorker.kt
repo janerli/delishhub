@@ -24,6 +24,9 @@ class FavoriteSyncWorker(
         const val UNIQUE_NAME_ONE_TIME = "favorites_sync_one_time"
         const val UNIQUE_NAME_PERIODIC = "favorites_sync_periodic"
 
+        private const val PREFS = "favorites_sync_prefs"
+        private const val KEY_LAST_PULL_AT = "last_pull_at"
+
         fun defaultConstraints(): Constraints =
             Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -44,69 +47,8 @@ class FavoriteSyncWorker(
         val fs = FirebaseFirestore.getInstance()
 
         return try {
-            // 1) UPLOAD: local pending -> server (чтобы локальные изменения "побеждали")
-            val pending = dao.getPendingNow(uid)
-            var uploaded = 0
-
-            for (f in pending) {
-                val isDeleted = f.syncStatus == SyncStatus.DELETED
-
-                val payload = hashMapOf<String, Any?>(
-                    "userId" to f.userId,
-                    "recipeId" to f.recipeId,
-                    "createdAt" to f.createdAt,
-                    "updatedAt" to f.updatedAt,
-                    "isDeleted" to isDeleted
-                )
-
-                // ✅ Новый путь: users/{uid}/favorites/{recipeId}
-                fs.collection("users")
-                    .document(uid)
-                    .collection("favorites")
-                    .document(f.recipeId)
-                    .set(payload, SetOptions.merge())
-                    .await()
-
-                uploaded++
-
-                if (isDeleted) dao.hardDelete(f.userId, f.recipeId)
-                else dao.markSynced(f.userId, f.recipeId)
-            }
-
-            // 2) PULL: server -> local (восстановление на новом устройстве/после чистки БД)
-            val snap = fs.collection("users")
-                .document(uid)
-                .collection("favorites")
-                .get()
-                .await()
-
-            var pulled = 0
-
-            for (doc in snap.documents) {
-                val recipeId = doc.getString("recipeId") ?: doc.id
-                val userId = doc.getString("userId") ?: uid
-                val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
-                val updatedAt = doc.getLong("updatedAt") ?: createdAt
-                val isDeleted = doc.getBoolean("isDeleted") ?: false
-
-                if (isDeleted) {
-                    // server says deleted -> remove locally
-                    dao.hardDelete(userId, recipeId)
-                    pulled++
-                } else {
-                    // server says exists -> upsert locally as SYNCED
-                    dao.addFavorite(
-                        FavoriteEntity(
-                            userId = userId,
-                            recipeId = recipeId,
-                            createdAt = createdAt,
-                            updatedAt = updatedAt,
-                            syncStatus = SyncStatus.SYNCED
-                        )
-                    )
-                    pulled++
-                }
-            }
+            val uploaded = runUpload(uid, fs, dao)
+            val pulled = runPull(uid, fs, dao)
 
             Result.success(
                 workDataOf(
@@ -119,5 +61,101 @@ class FavoriteSyncWorker(
         } finally {
             db.close()
         }
+    }
+
+    /**
+     * UPLOAD: local pending -> server
+     * Локальные изменения “побеждают” (последние правки остаются).
+     */
+    private suspend fun runUpload(uid: String, fs: FirebaseFirestore, dao: com.janerli.delishhub.data.local.dao.FavoriteDao): Int {
+        val pending = dao.getPendingNow(uid)
+        if (pending.isEmpty()) return 0
+
+        var uploaded = 0
+        for (f in pending) {
+            val isDeleted = f.syncStatus == SyncStatus.DELETED
+
+            val payload = hashMapOf<String, Any?>(
+                "userId" to f.userId,
+                "recipeId" to f.recipeId,
+                "createdAt" to f.createdAt,
+                "updatedAt" to f.updatedAt,
+                "isDeleted" to isDeleted
+            )
+
+            fs.collection("users")
+                .document(uid)
+                .collection("favorites")
+                .document(f.recipeId)
+                .set(payload, SetOptions.merge())
+                .await()
+
+            uploaded++
+
+            if (isDeleted) dao.hardDelete(f.userId, f.recipeId)
+            else dao.markSynced(f.userId, f.recipeId)
+        }
+
+        return uploaded
+    }
+
+    /**
+     * PULL: server -> local
+     * - initial pull: если lastPullAt == 0 → тянем все
+     * - иначе тянем только updatedAt > lastPullAt
+     * - conflict guard: не затираем локальные pending, если они новее сервера
+     */
+    private suspend fun runPull(uid: String, fs: FirebaseFirestore, dao: com.janerli.delishhub.data.local.dao.FavoriteDao): Int {
+        val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val lastPullAt = prefs.getLong(KEY_LAST_PULL_AT, 0L)
+
+        val query = fs.collection("users")
+            .document(uid)
+            .collection("favorites")
+            .let { q ->
+                if (lastPullAt == 0L) q else q.whereGreaterThan("updatedAt", lastPullAt)
+            }
+
+        val snap = query.get().await()
+
+        var pulled = 0
+        var maxUpdatedAt = lastPullAt
+
+        for (doc in snap.documents) {
+            val recipeId = doc.getString("recipeId") ?: doc.id
+            val userId = doc.getString("userId") ?: uid
+            val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+            val updatedAt = doc.getLong("updatedAt") ?: createdAt
+            val isDeleted = doc.getBoolean("isDeleted") ?: false
+
+            if (updatedAt > maxUpdatedAt) maxUpdatedAt = updatedAt
+
+            // conflict guard: если локально pending и локальная версия новее — пропускаем сервер
+            val local = dao.getNow(userId, recipeId)
+            if (local != null && local.syncStatus != SyncStatus.SYNCED && local.updatedAt > updatedAt) {
+                continue
+            }
+
+            if (isDeleted) {
+                dao.hardDelete(userId, recipeId)
+                pulled++
+                continue
+            }
+
+            dao.addFavorite(
+                FavoriteEntity(
+                    userId = userId,
+                    recipeId = recipeId,
+                    createdAt = createdAt,
+                    updatedAt = updatedAt,
+                    syncStatus = SyncStatus.SYNCED
+                )
+            )
+            dao.markSynced(userId, recipeId)
+            pulled++
+        }
+
+        prefs.edit().putLong(KEY_LAST_PULL_AT, maxUpdatedAt).apply()
+        return pulled
     }
 }

@@ -29,6 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -202,7 +203,11 @@ fun RecipeEditScreen(
                     singleLine = true
                 )
                 if (state.titleError != null) {
-                    Text(text = state.titleError!!, modifier = Modifier.padding(top = 4.dp))
+                    Text(
+                        text = state.titleError!!,
+                        modifier = Modifier.padding(top = 4.dp),
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
 
@@ -256,16 +261,26 @@ fun RecipeEditScreen(
                 }
             }
 
+            // --- Время ---
             item {
                 OutlinedTextField(
                     value = state.cookTime,
                     onValueChange = vm::setCookTimeDigitsOnly,
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Время (мин)") },
-                    singleLine = true
+                    singleLine = true,
+                    isError = state.cookTimeError != null
                 )
+                if (state.cookTimeError != null) {
+                    Text(
+                        text = state.cookTimeError!!,
+                        modifier = Modifier.padding(top = 4.dp),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
 
+            // --- Сложность ---
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -288,14 +303,23 @@ fun RecipeEditScreen(
 
             // --- Ингредиенты ---
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Ингредиенты")
-                    Button(onClick = vm::addIngredient, enabled = !state.saving) {
-                        Icon(Icons.Filled.Add, contentDescription = null)
-                        Text(" Добавить")
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Ингредиенты")
+                        Button(onClick = vm::addIngredient, enabled = !state.saving) {
+                            Icon(Icons.Filled.Add, contentDescription = null)
+                            Text(" Добавить")
+                        }
+                    }
+
+                    if (state.ingredientsError != null) {
+                        Text(
+                            text = state.ingredientsError!!,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }
@@ -310,14 +334,23 @@ fun RecipeEditScreen(
 
             // --- Шаги ---
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Шаги")
-                    Button(onClick = vm::addStep, enabled = !state.saving) {
-                        Icon(Icons.Filled.Add, contentDescription = null)
-                        Text(" Добавить")
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Шаги")
+                        Button(onClick = vm::addStep, enabled = !state.saving) {
+                            Icon(Icons.Filled.Add, contentDescription = null)
+                            Text(" Добавить")
+                        }
+                    }
+
+                    if (state.stepsError != null) {
+                        Text(
+                            text = state.stepsError!!,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }
@@ -338,7 +371,11 @@ fun RecipeEditScreen(
                 ) { Text(if (state.saving) "Сохранение..." else "Сохранить") }
 
                 if (state.error != null) {
-                    Text(text = state.error!!, modifier = Modifier.padding(top = 8.dp))
+                    Text(
+                        text = state.error!!,
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }

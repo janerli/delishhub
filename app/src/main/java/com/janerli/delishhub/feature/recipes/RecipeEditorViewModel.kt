@@ -32,7 +32,6 @@ class RecipeEditorViewModel(
         val saved: Boolean = false,
         val error: String? = null,
 
-        // ✅ стабильный id для нового рецепта (чтобы фото не терялось)
         val draftId: String = "",
 
         val title: String = "",
@@ -40,13 +39,14 @@ class RecipeEditorViewModel(
         val cookTime: String = "20",
         val difficulty: Float = 2f,
 
-        // ✅ публичность
         val isPublic: Boolean = false,
-
-        // ✅ главное фото (локально: file://...)
         val mainImageUrl: String? = null,
 
+        // --- validation ---
         val titleError: String? = null,
+        val cookTimeError: String? = null,
+        val ingredientsError: String? = null,
+        val stepsError: String? = null,
 
         val ingredients: List<IngredientUi> = listOf(
             IngredientUi(id = "i1", name = "", amount = "", unit = "")
@@ -55,7 +55,6 @@ class RecipeEditorViewModel(
             StepUi(id = "s1", text = "")
         ),
 
-        // ✅ Теги
         val allTags: List<TagEntity> = emptyList(),
         val selectedTagIds: Set<String> = emptySet(),
 
@@ -71,7 +70,6 @@ class RecipeEditorViewModel(
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
-        // ✅ всегда слушаем список тегов (нужно и для create, и для edit)
         viewModelScope.launch {
             repository.observeAllTags().collect { tags ->
                 _state.value = _state.value.copy(allTags = tags)
@@ -83,7 +81,10 @@ class RecipeEditorViewModel(
                 runCatching { repository.getRecipeFull(recipeId) }
                     .onSuccess { full ->
                         if (full == null) {
-                            _state.value = _state.value.copy(loading = false, error = "Рецепт не найден")
+                            _state.value = _state.value.copy(
+                                loading = false,
+                                error = "Рецепт не найден"
+                            )
                         } else {
                             applyFullToState(full)
                         }
@@ -108,13 +109,9 @@ class RecipeEditorViewModel(
             description = r.description,
             cookTime = r.cookTimeMin.toString(),
             difficulty = r.difficulty.coerceIn(1, 5).toFloat(),
-
             isPublic = r.isPublic,
             mainImageUrl = r.mainImageUrl,
-
-            // ✅ теги
             selectedTagIds = full.tags.map { it.id }.toSet(),
-
             existingCreatedAt = r.createdAt,
             ingredients = full.ingredients
                 .sortedBy { it.position }
@@ -137,21 +134,28 @@ class RecipeEditorViewModel(
         )
     }
 
-    // -------- Теги --------
+    // ----------------------------------------------------------------
+    // TAGS (FIX)
+    // ----------------------------------------------------------------
 
     fun toggleTag(tagId: String) {
-        val set = _state.value.selectedTagIds.toMutableSet()
-        if (set.contains(tagId)) set.remove(tagId) else set.add(tagId)
-        _state.value = _state.value.copy(selectedTagIds = set)
+        val current = _state.value.selectedTagIds.toMutableSet()
+        if (current.contains(tagId)) current.remove(tagId) else current.add(tagId)
+        _state.value = _state.value.copy(selectedTagIds = current)
     }
 
     fun addTag(name: String) {
+        val clean = name.trim()
+        if (clean.isBlank()) return
+
         viewModelScope.launch {
-            repository.upsertTag(name)
+            repository.upsertTag(clean)
         }
     }
 
-    // -------- Поля --------
+    // ----------------------------------------------------------------
+    // setters
+    // ----------------------------------------------------------------
 
     fun setTitle(v: String) {
         _state.value = _state.value.copy(title = v, titleError = null)
@@ -162,7 +166,10 @@ class RecipeEditorViewModel(
     }
 
     fun setCookTimeDigitsOnly(v: String) {
-        _state.value = _state.value.copy(cookTime = v.filter { it.isDigit() }.take(3))
+        _state.value = _state.value.copy(
+            cookTime = v.filter { it.isDigit() }.take(4),
+            cookTimeError = null
+        )
     }
 
     fun setDifficulty(v: Float) {
@@ -181,19 +188,19 @@ class RecipeEditorViewModel(
         _state.value = _state.value.copy(mainImageUrl = null)
     }
 
-    // -------- Ингредиенты --------
+    // -------- ingredients --------
 
     fun addIngredient() {
         val list = _state.value.ingredients.toMutableList()
         list.add(IngredientUi(id = "i${System.currentTimeMillis()}", name = "", amount = "", unit = ""))
-        _state.value = _state.value.copy(ingredients = list)
+        _state.value = _state.value.copy(ingredients = list, ingredientsError = null)
     }
 
     fun updateIngredient(updated: IngredientUi) {
         val list = _state.value.ingredients.toMutableList()
         val idx = list.indexOfFirst { it.id == updated.id }
         if (idx >= 0) list[idx] = updated
-        _state.value = _state.value.copy(ingredients = list)
+        _state.value = _state.value.copy(ingredients = list, ingredientsError = null)
     }
 
     fun removeIngredient(id: String) {
@@ -208,19 +215,19 @@ class RecipeEditorViewModel(
         }
     }
 
-    // -------- Шаги --------
+    // -------- steps --------
 
     fun addStep() {
         val list = _state.value.steps.toMutableList()
         list.add(StepUi(id = "s${System.currentTimeMillis()}", text = ""))
-        _state.value = _state.value.copy(steps = list)
+        _state.value = _state.value.copy(steps = list, stepsError = null)
     }
 
     fun updateStep(updated: StepUi) {
         val list = _state.value.steps.toMutableList()
         val idx = list.indexOfFirst { it.id == updated.id }
         if (idx >= 0) list[idx] = updated
-        _state.value = _state.value.copy(steps = list)
+        _state.value = _state.value.copy(steps = list, stepsError = null)
     }
 
     fun removeStep(id: String) {
@@ -235,28 +242,55 @@ class RecipeEditorViewModel(
         }
     }
 
-    // -------- UX --------
+    // -------- validation --------
 
-    fun clearError() {
-        _state.value = _state.value.copy(error = null)
-    }
-
-    fun consumeSaved() {
-        _state.value = _state.value.copy(saved = false)
-    }
-
-    fun save() {
+    private fun validate(): Boolean {
         val s = _state.value
-        val trimmedTitle = s.title.trim()
-        if (trimmedTitle.isEmpty()) {
-            _state.value = s.copy(titleError = "Введите название рецепта")
-            return
+
+        var titleError: String? = null
+        var cookTimeError: String? = null
+        var ingredientsError: String? = null
+        var stepsError: String? = null
+
+        val title = s.title.trim()
+        if (title.length < 2) titleError = "Название должно быть не короче 2 символов"
+        if (title.length > 60) titleError = "Название слишком длинное"
+
+        val cook = s.cookTime.toIntOrNull()
+        if (cook == null || cook !in 0..1440) {
+            cookTimeError = "Время должно быть от 0 до 1440 минут"
         }
 
-        val cookTimeMin = s.cookTime.toIntOrNull()?.coerceAtLeast(0) ?: 0
-        val difficultyInt = s.difficulty.roundToInt().coerceIn(1, 5)
+        val validIngredients = s.ingredients.count { it.name.trim().isNotEmpty() }
+        if (validIngredients == 0) {
+            ingredientsError = "Добавь хотя бы один ингредиент"
+        }
 
-        _state.value = s.copy(saving = true, error = null, titleError = null)
+        val validSteps = s.steps.count { it.text.trim().isNotEmpty() }
+        if (validSteps == 0) {
+            stepsError = "Добавь хотя бы один шаг приготовления"
+        }
+
+        _state.value = s.copy(
+            titleError = titleError,
+            cookTimeError = cookTimeError,
+            ingredientsError = ingredientsError,
+            stepsError = stepsError
+        )
+
+        return titleError == null &&
+                cookTimeError == null &&
+                ingredientsError == null &&
+                stepsError == null
+    }
+
+    // -------- save --------
+
+    fun save() {
+        if (!validate()) return
+
+        val s = _state.value
+        _state.value = s.copy(saving = true, error = null)
 
         viewModelScope.launch {
             val now = System.currentTimeMillis()
@@ -265,56 +299,46 @@ class RecipeEditorViewModel(
             val id = recipeId ?: s.draftId
             val createdAt = s.existingCreatedAt ?: now
 
-            // syncStatus: created/updated (для будущего Firestore)
-            val syncStatus = if (recipeId == null) 1 else 2
-
             val recipe = RecipeEntity(
                 id = id,
                 ownerId = ownerId,
-                title = trimmedTitle,
+                title = s.title.trim(),
                 description = s.description.trim(),
-                cookTimeMin = cookTimeMin,
-                difficulty = difficultyInt,
-
+                cookTimeMin = s.cookTime.toInt(),
+                difficulty = s.difficulty.roundToInt().coerceIn(1, 5),
                 isPublic = s.isPublic,
                 mainImageUrl = s.mainImageUrl,
-
                 createdAt = createdAt,
                 updatedAt = now,
-                syncStatus = syncStatus
+                syncStatus = if (recipeId == null) 1 else 2
             )
 
-            val ingredients = s.ingredients
-                .mapIndexedNotNull { index, ui ->
-                    val name = ui.name.trim()
-                    if (name.isEmpty()) return@mapIndexedNotNull null
+            val ingredients = s.ingredients.mapIndexedNotNull { index, ui ->
+                val name = ui.name.trim()
+                if (name.isEmpty()) return@mapIndexedNotNull null
 
-                    val amount = ui.amount.trim().replace(',', '.').toDoubleOrNull()
-                    val unit = ui.unit.trim().takeIf { it.isNotBlank() }
+                IngredientEntity(
+                    id = ui.id.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
+                    recipeId = id,
+                    name = name,
+                    amount = ui.amount.replace(',', '.').toDoubleOrNull(),
+                    unit = ui.unit.trim().takeIf { it.isNotBlank() },
+                    position = index
+                )
+            }
 
-                    IngredientEntity(
-                        id = ui.id.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
-                        recipeId = id,
-                        name = name,
-                        amount = amount,
-                        unit = unit,
-                        position = index
-                    )
-                }
+            val steps = s.steps.mapIndexedNotNull { index, ui ->
+                val text = ui.text.trim()
+                if (text.isEmpty()) return@mapIndexedNotNull null
 
-            val steps = s.steps
-                .mapIndexedNotNull { index, ui ->
-                    val text = ui.text.trim()
-                    if (text.isEmpty()) return@mapIndexedNotNull null
-
-                    StepEntity(
-                        id = ui.id.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
-                        recipeId = id,
-                        text = text,
-                        photoUrl = null,
-                        position = index
-                    )
-                }
+                StepEntity(
+                    id = ui.id.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
+                    recipeId = id,
+                    text = text,
+                    photoUrl = null,
+                    position = index
+                )
+            }
 
             runCatching {
                 repository.upsertRecipeFull(
@@ -332,5 +356,9 @@ class RecipeEditorViewModel(
                 )
             }
         }
+    }
+
+    fun consumeSaved() {
+        _state.value = _state.value.copy(saved = false)
     }
 }

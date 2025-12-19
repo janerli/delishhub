@@ -12,7 +12,6 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.janerli.delishhub.data.local.AppDatabase
 import com.janerli.delishhub.data.local.DbConfig
-import com.janerli.delishhub.data.local.dao.MealPlanDao
 import com.janerli.delishhub.data.local.entity.MealPlanEntryEntity
 import kotlinx.coroutines.tasks.await
 
@@ -44,11 +43,12 @@ class MealPlanSyncWorker(
             .build()
 
         val dao = db.mealPlanDao()
-        val firestore = FirebaseFirestore.getInstance()
+        val fs = FirebaseFirestore.getInstance()
 
         return try {
-            val uploaded = runUpload(uid, firestore, dao)
-            val pulled = runPull(uid, firestore, dao)
+            val uploaded = runUpload(uid, fs, dao)
+            val pulled = runPull(uid, fs, dao)
+
             Result.success(workDataOf("uploaded" to uploaded, "pulled" to pulled))
         } catch (_: Exception) {
             Result.retry()
@@ -57,7 +57,15 @@ class MealPlanSyncWorker(
         }
     }
 
-    private suspend fun runUpload(uid: String, fs: FirebaseFirestore, dao: MealPlanDao): Int {
+    // ---------------------------------------------------------------------
+    // Upload
+    // ---------------------------------------------------------------------
+
+    private suspend fun runUpload(
+        uid: String,
+        fs: FirebaseFirestore,
+        dao: com.janerli.delishhub.data.local.dao.MealPlanDao
+    ): Int {
         val pending = dao.getPendingNow(uid)
         if (pending.isEmpty()) return 0
 
@@ -72,12 +80,12 @@ class MealPlanSyncWorker(
                 "mealType" to e.mealType,
                 "recipeId" to e.recipeId,
                 "servings" to e.servings,
+                "timeMinutes" to e.timeMinutes,
                 "createdAt" to e.createdAt,
                 "updatedAt" to e.updatedAt,
                 "isDeleted" to isDeleted
             )
 
-            // ✅ Новый путь: users/{uid}/mealPlan/{entryId}
             fs.collection("users")
                 .document(uid)
                 .collection("mealPlan")
@@ -91,16 +99,26 @@ class MealPlanSyncWorker(
         return count
     }
 
-    private suspend fun runPull(uid: String, fs: FirebaseFirestore, dao: MealPlanDao): Int {
+    // ---------------------------------------------------------------------
+    // Pull (initial + conflict guard)
+    // ---------------------------------------------------------------------
+
+    private suspend fun runPull(
+        uid: String,
+        fs: FirebaseFirestore,
+        dao: com.janerli.delishhub.data.local.dao.MealPlanDao
+    ): Int {
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val lastPullAt = prefs.getLong(KEY_LAST_PULL_AT, 0L)
 
-        val snap = fs.collection("users")
+        val query = fs.collection("users")
             .document(uid)
             .collection("mealPlan")
-            .whereGreaterThan("updatedAt", lastPullAt)
-            .get()
-            .await()
+            .let { q ->
+                if (lastPullAt == 0L) q else q.whereGreaterThan("updatedAt", lastPullAt)
+            }
+
+        val snap = query.get().await()
 
         var pulled = 0
         var maxUpdatedAt = lastPullAt
@@ -109,7 +127,17 @@ class MealPlanSyncWorker(
             val id = doc.getString("id") ?: doc.id
             val updatedAt = doc.getLong("updatedAt") ?: 0L
             val isDeleted = doc.getBoolean("isDeleted") ?: false
+
             if (updatedAt > maxUpdatedAt) maxUpdatedAt = updatedAt
+
+            val local = dao.getSlot(
+                uid,
+                doc.getLong("dateEpochDay") ?: 0L,
+                doc.getString("mealType") ?: ""
+            )
+            if (local != null && local.syncStatus != SyncStatus.SYNCED && local.updatedAt > updatedAt) {
+                continue
+            }
 
             if (isDeleted) {
                 dao.hardDeleteById(id)
@@ -124,10 +152,12 @@ class MealPlanSyncWorker(
                 mealType = doc.getString("mealType") ?: "",
                 recipeId = doc.getString("recipeId") ?: "",
                 servings = (doc.getLong("servings") ?: 1L).toInt(),
+                timeMinutes = doc.getLong("timeMinutes")?.toInt(),
                 createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
                 updatedAt = updatedAt,
                 syncStatus = SyncStatus.SYNCED
             )
+
             dao.upsert(entity)
             dao.markSynced(id)
             pulled++

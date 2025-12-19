@@ -24,6 +24,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -142,7 +143,6 @@ fun ShoppingScreen(navController: NavHostController) {
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // ✅ теперь с выбором дня
                     FilledTonalButton(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { showChoosePlanDay = true }
@@ -213,7 +213,26 @@ fun ShoppingScreen(navController: NavHostController) {
             )
         }
 
+        // -----------------------
+        // ✅ Валидация Add Dialog
+        // -----------------------
         if (isAddOpen) {
+            val nameTrim = name.trim()
+            val qtyTrim = qty.trim()
+
+            val nameError: String? = when {
+                nameTrim.isEmpty() -> "Введите название"
+                nameTrim.length < 2 -> "Минимум 2 символа"
+                nameTrim.length > 60 -> "Максимум 60 символов"
+                else -> null
+            }
+
+            val qtyError: String? = when {
+                qtyTrim.isEmpty() -> null
+                qtyTrim.length > 40 -> "Слишком длинно (макс. 40 символов)"
+                else -> null
+            }
+
             AlertDialog(
                 onDismissRequest = { isAddOpen = false },
                 title = { Text("Добавить покупку") },
@@ -221,27 +240,42 @@ fun ShoppingScreen(navController: NavHostController) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
                             value = name,
-                            onValueChange = { name = it },
+                            onValueChange = { if (it.length <= 80) name = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Название") },
-                            singleLine = true
+                            label = { Text("Название*") },
+                            singleLine = true,
+                            isError = nameError != null,
+                            supportingText = {
+                                if (nameError != null) {
+                                    Text(nameError, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
                         )
                         OutlinedTextField(
                             value = qty,
-                            onValueChange = { qty = it },
+                            onValueChange = { if (it.length <= 60) qty = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Количество (текст)") },
-                            singleLine = true
+                            label = { Text("Количество (текст, не обязательно)") },
+                            singleLine = true,
+                            isError = qtyError != null,
+                            supportingText = {
+                                if (qtyError != null) {
+                                    Text(qtyError, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
                         )
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = {
-                        vm.addManual(name, qty)
-                        name = ""
-                        qty = ""
-                        isAddOpen = false
-                    }) { Text("Добавить") }
+                    TextButton(
+                        onClick = {
+                            vm.addManual(nameTrim, qtyTrim.takeIf { it.isNotEmpty() })
+                            name = ""
+                            qty = ""
+                            isAddOpen = false
+                        },
+                        enabled = nameError == null && qtyError == null
+                    ) { Text("Добавить") }
                 },
                 dismissButton = {
                     TextButton(onClick = { isAddOpen = false }) { Text("Отмена") }

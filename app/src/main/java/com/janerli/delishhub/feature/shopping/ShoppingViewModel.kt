@@ -57,7 +57,7 @@ class ShoppingViewModel(
         addFromPlanDay(LocalDate.now().toEpochDay())
     }
 
-    /** ✅ Шаг 5.6: импорт из выбранного дня */
+    /** импорт из выбранного дня */
     fun addFromPlanDay(epochDay: Long) {
         viewModelScope.launch {
             repository.addToShoppingFromPlanDay(userId, epochDay)

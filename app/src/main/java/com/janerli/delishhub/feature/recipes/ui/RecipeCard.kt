@@ -153,7 +153,7 @@ private fun BadgesRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (isPublic) Badge(text = "PUBLIC")
+        if (isPublic) Badge(text = "ПУБЛИЧНЫЙ")
         if (isMine) Badge(text = "МОЙ")
     }
 }

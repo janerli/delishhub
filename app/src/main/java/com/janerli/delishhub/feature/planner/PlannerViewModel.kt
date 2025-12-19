@@ -68,18 +68,27 @@ class PlannerViewModel(
                 initialValue = MealType.entries.map { SlotState(it, null, null) }
             )
 
+    // Валидация для планов
+    fun validateSlot(slot: SlotState): Boolean {
+        return slot.recipeId != null &&
+                slot.timeMinutes != null && slot.timeMinutes in 0..1439 &&
+                slot.mealType != MealType.BREAKFAST
+    }
+
     fun setMeal(mealType: MealType, recipeId: String) {
         viewModelScope.launch {
-            repository.setMeal(
-                userId = SessionManager.session.value.userId,
-                dateEpochDay = _selectedDateEpoch.value,
-                mealType = mealType.key,
-                recipeId = recipeId,
-                servings = 1,
-                timeMinutes = null // ✅ не затираем существующее время
-            )
-            // ✅ пересобираем уведомления сразу
-            MealPlanReminderScheduler.scheduleRefreshNow(appContext)
+            if (validateSlot(SlotState(mealType, recipeId, null))) {
+                repository.setMeal(
+                    userId = SessionManager.session.value.userId,
+                    dateEpochDay = _selectedDateEpoch.value,
+                    mealType = mealType.key,
+                    recipeId = recipeId,
+                    servings = 1,
+                    timeMinutes = null // не затираем существующее время
+                )
+                // пересобираем уведомления сразу
+                MealPlanReminderScheduler.scheduleRefreshNow(appContext)
+            }
         }
     }
 
@@ -90,21 +99,23 @@ class PlannerViewModel(
                 dateEpochDay = _selectedDateEpoch.value,
                 mealType = mealType.key
             )
-            // ✅ пересобираем уведомления сразу
+            // пересобираем уведомления сразу
             MealPlanReminderScheduler.scheduleRefreshNow(appContext)
         }
     }
 
     fun updateMealTime(mealType: MealType, timeMinutes: Int?) {
         viewModelScope.launch {
-            repository.updateMealTime(
-                userId = SessionManager.session.value.userId,
-                dateEpochDay = _selectedDateEpoch.value,
-                mealType = mealType.key,
-                timeMinutes = timeMinutes
-            )
-            // ✅ пересобираем уведомления сразу
-            MealPlanReminderScheduler.scheduleRefreshNow(appContext)
+            if (timeMinutes != null && timeMinutes in 0..1439) {
+                repository.updateMealTime(
+                    userId = SessionManager.session.value.userId,
+                    dateEpochDay = _selectedDateEpoch.value,
+                    mealType = mealType.key,
+                    timeMinutes = timeMinutes
+                )
+                // пересобираем уведомления сразу
+                MealPlanReminderScheduler.scheduleRefreshNow(appContext)
+            }
         }
     }
 }

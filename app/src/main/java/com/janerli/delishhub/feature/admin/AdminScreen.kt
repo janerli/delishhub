@@ -11,6 +11,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.janerli.delishhub.core.session.SessionManager
 import com.janerli.delishhub.core.ui.MainScaffold
+import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun AdminScreen(
@@ -19,7 +20,7 @@ fun AdminScreen(
 ) {
     val session by SessionManager.session.collectAsStateWithLifecycle()
 
-    // 🔒 защита
+    // 🔒 защита от не-админов
     if (!session.isAdmin) {
         MainScaffold(
             navController = navController,
@@ -40,20 +41,16 @@ fun AdminScreen(
         return
     }
 
-    // ✅ Variant 2 — холодный акцент только для админки
     val adminScheme = MaterialTheme.colorScheme.copy(
         primary = Color(0xFF5C6BC0),    // indigo
         secondary = Color(0xFF26A69A),  // teal
         tertiary = Color(0xFF7E57C2)    // purple
     )
 
-    // ⚠️ ВАЖНО: typography берём из текущей темы
-    MaterialTheme(
-        colorScheme = adminScheme,
-        typography = MaterialTheme.typography
-    ) {
+    // Реализация интерфейса
+    MaterialTheme(colorScheme = adminScheme, typography = MaterialTheme.typography) {
         var tabIndex by remember { mutableIntStateOf(0) }
-        val tabs = listOf("Рецепты", "Теги")
+        val tabs = listOf("Рецепты", "Теги", "Пользователи")
 
         MainScaffold(
             navController = navController,
@@ -68,11 +65,7 @@ fun AdminScreen(
             ) {
                 TabRow(selectedTabIndex = tabIndex) {
                     tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = tabIndex == index,
-                            onClick = { tabIndex = index },
-                            text = { Text(title) }
-                        )
+                        Tab(selected = tabIndex == index, onClick = { tabIndex = index }, text = { Text(title) })
                     }
                 }
 
