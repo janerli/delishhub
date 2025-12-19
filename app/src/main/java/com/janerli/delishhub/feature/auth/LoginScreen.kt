@@ -1,12 +1,21 @@
 package com.janerli.delishhub.feature.auth
 
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -24,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
 import com.janerli.delishhub.core.session.SessionManager
 import com.janerli.delishhub.data.sync.FavoriteSyncScheduler
 import com.janerli.delishhub.data.sync.MealPlanSyncScheduler
@@ -46,6 +56,49 @@ fun LoginScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
+    val googleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode != Activity.RESULT_OK) {
+            error = "Google-вход отменён"
+            return@rememberLauncherForActivityResult
+        }
+
+        loading = true
+        scope.launch {
+            try {
+                val idToken = GoogleAuthHelper.getIdTokenFromResult(res.data)
+                val credential = GoogleAuthProvider.getCredential(idToken, null)
+
+                FirebaseAuth.getInstance()
+                    .signInWithCredential(credential)
+                    .await()
+
+                val fbUser = FirebaseAuth.getInstance().currentUser
+                if (fbUser != null) SessionManager.setFromFirebase(fbUser) else SessionManager.setGuest()
+
+                // ✅ запускаем ВСЕ синки
+                FavoriteSyncScheduler.enqueueOneTime(context)
+                FavoriteSyncScheduler.schedulePeriodic(context)
+
+                ShoppingSyncScheduler.enqueueOneTime(context)
+                ShoppingSyncScheduler.schedulePeriodic(context)
+
+                MealPlanSyncScheduler.enqueueOneTime(context)
+                MealPlanSyncScheduler.schedulePeriodic(context)
+
+                RecipeSyncScheduler.enqueueOneTime(context)
+                RecipeSyncScheduler.schedulePeriodic(context)
+
+                onLoginSuccess()
+            } catch (t: Throwable) {
+                error = t.message ?: "Ошибка Google-входа"
+            } finally {
+                loading = false
+            }
+        }
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -57,99 +110,129 @@ fun LoginScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Вход", style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(16.dp))
 
-            OutlinedTextField(
-                value = email,
-                onValueChange = {
-                    email = it
-                    error = null
-                },
-                label = { Text("Email") },
-                singleLine = true
-            )
+            Card(
+                modifier = Modifier.widthIn(max = 420.dp),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Вход", style = MaterialTheme.typography.headlineSmall)
 
-            Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = {
+                            email = it
+                            error = null
+                        },
+                        label = { Text("Email") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-            OutlinedTextField(
-                value = password,
-                onValueChange = {
-                    password = it
-                    error = null
-                },
-                label = { Text("Пароль") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
-            )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = {
+                            password = it
+                            error = null
+                        },
+                        label = { Text("Пароль") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-            if (error != null) {
-                Spacer(Modifier.height(10.dp))
-                Text(error!!, color = MaterialTheme.colorScheme.error)
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Button(
-                enabled = !loading,
-                onClick = {
-                    val e = email.trim()
-                    val p = password
-
-                    if (e.isEmpty() || !e.contains("@")) {
-                        error = "Введите корректный email"
-                        return@Button
-                    }
-                    if (p.isEmpty()) {
-                        error = "Введите пароль"
-                        return@Button
+                    if (error != null) {
+                        Text(error!!, color = MaterialTheme.colorScheme.error)
                     }
 
-                    loading = true
-                    scope.launch {
-                        try {
-                            FirebaseAuth.getInstance()
-                                .signInWithEmailAndPassword(e, p)
-                                .await()
+                    Spacer(Modifier.height(6.dp))
 
-                            val fbUser = FirebaseAuth.getInstance().currentUser
-                            if (fbUser != null) {
-                                // ✅ КРИТИЧНО: обновляем session сразу, чтобы не быть "гостем"
-                                SessionManager.setFromFirebase(fbUser)
-                            } else {
-                                SessionManager.setGuest()
+                    Button(
+                        enabled = !loading,
+                        onClick = {
+                            val e = email.trim()
+                            val p = password
+
+                            if (e.isEmpty() || !e.contains("@")) {
+                                error = "Введите корректный email"
+                                return@Button
+                            }
+                            if (p.isEmpty()) {
+                                error = "Введите пароль"
+                                return@Button
                             }
 
-                            // ✅ запускаем ВСЕ синки
-                            FavoriteSyncScheduler.enqueueOneTime(context)
-                            FavoriteSyncScheduler.schedulePeriodic(context)
+                            loading = true
+                            scope.launch {
+                                try {
+                                    FirebaseAuth.getInstance()
+                                        .signInWithEmailAndPassword(e, p)
+                                        .await()
 
-                            ShoppingSyncScheduler.enqueueOneTime(context)
-                            ShoppingSyncScheduler.schedulePeriodic(context)
+                                    val fbUser = FirebaseAuth.getInstance().currentUser
+                                    if (fbUser != null) SessionManager.setFromFirebase(fbUser) else SessionManager.setGuest()
 
-                            MealPlanSyncScheduler.enqueueOneTime(context)
-                            MealPlanSyncScheduler.schedulePeriodic(context)
+                                    // ✅ запускаем ВСЕ синки
+                                    FavoriteSyncScheduler.enqueueOneTime(context)
+                                    FavoriteSyncScheduler.schedulePeriodic(context)
 
-                            RecipeSyncScheduler.enqueueOneTime(context)
-                            RecipeSyncScheduler.schedulePeriodic(context)
+                                    ShoppingSyncScheduler.enqueueOneTime(context)
+                                    ShoppingSyncScheduler.schedulePeriodic(context)
 
-                            onLoginSuccess()
-                        } catch (t: Throwable) {
-                            error = t.message ?: "Ошибка входа"
-                        } finally {
-                            loading = false
+                                    MealPlanSyncScheduler.enqueueOneTime(context)
+                                    MealPlanSyncScheduler.schedulePeriodic(context)
+
+                                    RecipeSyncScheduler.enqueueOneTime(context)
+                                    RecipeSyncScheduler.schedulePeriodic(context)
+
+                                    onLoginSuccess()
+                                } catch (t: Throwable) {
+                                    error = t.message ?: "Ошибка входа"
+                                } finally {
+                                    loading = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(modifier = Modifier.height(18.dp))
+                            Text(" Входим…")
+                        } else {
+                            Text("Войти")
                         }
                     }
+
+                    // --- Google Sign-In ---
+                    Button(
+                        enabled = !loading,
+                        onClick = {
+                            error = null
+                            try {
+                                val intent = GoogleAuthHelper.signInIntent(context)
+                                googleLauncher.launch(intent)
+                            } catch (t: Throwable) {
+                                error = t.message ?: "Ошибка запуска Google-входа"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Войти через Google")
+                    }
+
+                    TextButton(onClick = onForgot, enabled = !loading) { Text("Забыли пароль?") }
+
+                    Spacer(Modifier.height(2.dp))
+                    TextButton(onClick = onBack, enabled = !loading) { Text("Назад") }
                 }
-            ) {
-                Text(if (loading) "Входим..." else "Войти")
             }
-
-            Spacer(Modifier.height(10.dp))
-            TextButton(onClick = onForgot, enabled = !loading) { Text("Забыли пароль?") }
-
-            Spacer(Modifier.height(18.dp))
-            TextButton(onClick = onBack, enabled = !loading) { Text("Назад") }
         }
     }
 }

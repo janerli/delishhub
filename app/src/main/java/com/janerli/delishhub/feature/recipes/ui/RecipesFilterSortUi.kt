@@ -5,7 +5,10 @@ data class RecipesFiltersUi(
     val maxTime: Int? = null,
     val minDifficulty: Int? = null,
     val maxDifficulty: Int? = null,
-    val onlyFavorites: Boolean = false
+    val onlyFavorites: Boolean = false,
+
+    // ✅ новое: мультивыбор тегов
+    val tagIds: Set<String> = emptySet()
 )
 
 enum class RecipesSortUi {

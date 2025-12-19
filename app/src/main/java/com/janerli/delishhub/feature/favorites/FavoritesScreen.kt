@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,29 +40,24 @@ fun FavoritesScreen(navController: NavHostController) {
         onBack = { navController.popBackStack() }
     ) { padding: PaddingValues ->
 
-        if (isGuest) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text("Избранное скрыто в гостевом режиме.")
+        when {
+            isGuest -> {
+                EmptyState(
+                    padding,
+                    title = "Избранное недоступно",
+                    subtitle = "В гостевом режиме нельзя сохранять рецепты."
+                )
             }
-        } else {
-            if (favorites.isEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text("Пока нет избранных рецептов.")
-                    Text("Открой рецепт и нажми сердечко — он появится здесь.")
-                }
-            } else {
+
+            favorites.isEmpty() -> {
+                EmptyState(
+                    padding,
+                    title = "Пока пусто",
+                    subtitle = "Добавь рецепт в избранное — он появится здесь."
+                )
+            }
+
+            else -> {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -70,10 +66,7 @@ fun FavoritesScreen(navController: NavHostController) {
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
-                    items(
-                        items = favorites,
-                        key = { item: RecipeCardUi -> item.id }
-                    ) { item: RecipeCardUi ->
+                    items(favorites, key = { it.id }) { item ->
                         RecipeCard(
                             item = item,
                             onOpen = { id -> navController.navigate(Routes.recipeDetails(id)) },
@@ -83,5 +76,23 @@ fun FavoritesScreen(navController: NavHostController) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EmptyState(
+    padding: PaddingValues,
+    title: String,
+    subtitle: String
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(subtitle, style = MaterialTheme.typography.bodyMedium)
     }
 }

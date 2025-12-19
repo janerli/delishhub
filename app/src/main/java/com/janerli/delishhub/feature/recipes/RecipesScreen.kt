@@ -15,6 +15,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -55,7 +56,10 @@ fun RecipesScreen(
     val session by SessionManager.session.collectAsStateWithLifecycle()
     val isGuest = session.isGuest
 
-    var query: String by rememberSaveable { mutableStateOf("") }
+    val allTags by vm.allTags.collectAsStateWithLifecycle()
+    val tagMatchedIds by vm.tagMatchedRecipeIds.collectAsStateWithLifecycle()
+
+    var query by rememberSaveable { mutableStateOf("") }
     var filters by remember { mutableStateOf(RecipesFiltersUi()) }
     var sort by remember { mutableStateOf(RecipesSortUi.TITLE_ASC) }
 
@@ -65,20 +69,25 @@ fun RecipesScreen(
     val items by vm.cards.collectAsStateWithLifecycle()
 
     val filtered = items
-        .asSequence()
         .filter { it.title.contains(query, ignoreCase = true) }
         .filter { if (filters.onlyFavorites) it.isFavorite else true }
         .filter {
             val minT = filters.minTime
             val maxT = filters.maxTime
-            (minT == null || it.cookTimeMin >= minT) && (maxT == null || it.cookTimeMin <= maxT)
+            (minT == null || it.cookTimeMin >= minT) &&
+                    (maxT == null || it.cookTimeMin <= maxT)
         }
         .filter {
             val minD = filters.minDifficulty
             val maxD = filters.maxDifficulty
-            (minD == null || it.difficulty >= minD) && (maxD == null || it.difficulty <= maxD)
+            (minD == null || it.difficulty >= minD) &&
+                    (maxD == null || it.difficulty <= maxD)
         }
-        .toList()
+        // ✅ ТЕГИ: если выбраны — оставляем только те, чьи id в tagMatchedIds
+        .filter {
+            if (filters.tagIds.isEmpty()) true
+            else tagMatchedIds.contains(it.id)
+        }
 
     val shown = when (sort) {
         RecipesSortUi.TITLE_ASC -> filtered.sortedBy { it.title.lowercase() }
@@ -92,7 +101,6 @@ fun RecipesScreen(
         showBack = isMyMode,
         onBack = { navController.popBackStack() },
         fab = {
-            // ✅ гостю нельзя создавать
             if (!isGuest) {
                 FloatingActionButton(onClick = { navController.navigate(Routes.RECIPE_CREATE) }) {
                     Icon(Icons.Filled.Add, contentDescription = "Добавить рецепт")
@@ -117,41 +125,29 @@ fun RecipesScreen(
                 singleLine = true
             )
 
-            Column {
-                RecipesTopControls(
-                    onOpenFilters = { isFiltersOpen = true },
-                    onOpenSort = { isSortMenuOpen = true }
+            RecipesTopControls(
+                onOpenFilters = { isFiltersOpen = true },
+                onOpenSort = { isSortMenuOpen = true },
+                selectedTagsCount = filters.tagIds.size
+            )
+
+            if (shown.isEmpty()) {
+                EmptyState(
+                    title = "Ничего не найдено",
+                    subtitle = "Попробуй изменить поиск или фильтры."
                 )
-
-                DropdownMenu(
-                    expanded = isSortMenuOpen,
-                    onDismissRequest = { isSortMenuOpen = false }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Сортировка: Название (A–Z)") },
-                        onClick = { sort = RecipesSortUi.TITLE_ASC; isSortMenuOpen = false }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Сортировка: Время (по возрастанию)") },
-                        onClick = { sort = RecipesSortUi.TIME_ASC; isSortMenuOpen = false }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Сортировка: Сложность (по возрастанию)") },
-                        onClick = { sort = RecipesSortUi.DIFFICULTY_ASC; isSortMenuOpen = false }
-                    )
-                }
-            }
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 96.dp)
-            ) {
-                items(items = shown, key = { it.id }) { item ->
-                    RecipeCard(
-                        item = item,
-                        onOpen = { id -> navController.navigate(Routes.recipeDetails(id)) },
-                        onToggleFavorite = if (isGuest) null else { id -> vm.toggleFavorite(id) }
-                    )
+                    items(shown, key = { it.id }) { item ->
+                        RecipeCard(
+                            item = item,
+                            onOpen = { id -> navController.navigate(Routes.recipeDetails(id)) },
+                            onToggleFavorite = if (isGuest) null else { id -> vm.toggleFavorite(id) }
+                        )
+                    }
                 }
             }
         }
@@ -160,16 +156,54 @@ fun RecipesScreen(
             ModalBottomSheet(onDismissRequest = { isFiltersOpen = false }) {
                 FiltersSheet(
                     current = filters,
-                    onApply = { newFilters ->
-                        filters = newFilters
+                    allTags = allTags,
+                    onApply = {
+                        filters = it
+                        vm.setSelectedTagIds(it.tagIds) // ✅ обновляем VM, чтобы пошёл Flow ids
                         isFiltersOpen = false
                     },
                     onReset = {
-                        filters = RecipesFiltersUi()
+                        val cleared = RecipesFiltersUi()
+                        filters = cleared
+                        vm.setSelectedTagIds(emptySet())
                         isFiltersOpen = false
                     }
                 )
             }
         }
+
+        DropdownMenu(
+            expanded = isSortMenuOpen,
+            onDismissRequest = { isSortMenuOpen = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Сортировка: Название (A–Z)") },
+                onClick = { sort = RecipesSortUi.TITLE_ASC; isSortMenuOpen = false }
+            )
+            DropdownMenuItem(
+                text = { Text("Сортировка: Время") },
+                onClick = { sort = RecipesSortUi.TIME_ASC; isSortMenuOpen = false }
+            )
+            DropdownMenuItem(
+                text = { Text("Сортировка: Сложность") },
+                onClick = { sort = RecipesSortUi.DIFFICULTY_ASC; isSortMenuOpen = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyState(
+    title: String,
+    subtitle: String
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(subtitle, style = MaterialTheme.typography.bodyMedium)
     }
 }

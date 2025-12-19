@@ -15,7 +15,18 @@ data class MealPlanEntryEntity(
     @PrimaryKey val id: String,
     val userId: String,
     val dateEpochDay: Long,
-    val mealType: String,          // "BREAKFAST"/"LUNCH"/...
+
+    /**
+     * "BREAKFAST" / "LUNCH" / "DINNER" / "SNACK"
+     */
+    val mealType: String,
+
+    /**
+     * Minutes from start of day (0..1439). null = no time set.
+     * Используем для UI и локальных напоминаний.
+     */
+    val timeMinutes: Int? = null,
+
     val recipeId: String,
     val servings: Int,
     val createdAt: Long,

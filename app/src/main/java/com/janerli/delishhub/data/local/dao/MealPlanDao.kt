@@ -17,7 +17,10 @@ interface MealPlanDao {
         WHERE userId = :userId
           AND dateEpochDay = :dateEpochDay
           AND syncStatus != 3
-        ORDER BY mealType ASC
+        ORDER BY 
+          CASE WHEN timeMinutes IS NULL THEN 1 ELSE 0 END,
+          timeMinutes ASC,
+          mealType ASC
         """
     )
     fun observeDay(userId: String, dateEpochDay: Long): Flow<List<MealPlanEntryEntity>>
@@ -29,7 +32,10 @@ interface MealPlanDao {
         WHERE userId = :userId
           AND dateEpochDay = :dateEpochDay
           AND syncStatus != 3
-        ORDER BY mealType ASC
+        ORDER BY 
+          CASE WHEN timeMinutes IS NULL THEN 1 ELSE 0 END,
+          timeMinutes ASC,
+          mealType ASC
         """
     )
     suspend fun getDayNow(userId: String, dateEpochDay: Long): List<MealPlanEntryEntity>

@@ -3,22 +3,28 @@ package com.janerli.delishhub.feature.profile
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Switch
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.janerli.delishhub.core.ui.MainScaffold
+import com.janerli.delishhub.core.ui.theme.ThemeMode
+import com.janerli.delishhub.core.ui.theme.ThemeStore
 
 @Composable
 fun SettingsScreen(navController: NavHostController) {
-    var darkTheme by remember { mutableStateOf(true) } // на шаге 5 сохраним в DataStore/Room
+    val mode by ThemeStore.mode.collectAsState()
 
     MainScaffold(
         navController = navController,
@@ -26,6 +32,7 @@ fun SettingsScreen(navController: NavHostController) {
         showBack = true,
         onBack = { navController.popBackStack() }
     ) { padding: PaddingValues ->
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -33,20 +40,32 @@ fun SettingsScreen(navController: NavHostController) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Тема")
-                    androidx.compose.foundation.layout.Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(if (darkTheme) "Тёмная" else "Светлая")
-                        Switch(checked = darkTheme, onCheckedChange = { darkTheme = it })
-                    }
-                    Text("Сохранение настройки подключим на шаге 5.")
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Тема", modifier = Modifier.padding(bottom = 4.dp))
+
+                    ThemeRow(
+                        title = "Как в системе",
+                        selected = mode == ThemeMode.SYSTEM,
+                        onSelect = { ThemeStore.setMode(ThemeMode.SYSTEM) }
+                    )
+                    ThemeRow(
+                        title = "Светлая",
+                        selected = mode == ThemeMode.LIGHT,
+                        onSelect = { ThemeStore.setMode(ThemeMode.LIGHT) }
+                    )
+                    ThemeRow(
+                        title = "Тёмная",
+                        selected = mode == ThemeMode.DARK,
+                        onSelect = { ThemeStore.setMode(ThemeMode.DARK) }
+                    )
                 }
             }
 
@@ -54,11 +73,30 @@ fun SettingsScreen(navController: NavHostController) {
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text("Уведомления")
-                    Text("FCM уведомления подключим на шаге 6.")
+                    Text("Локальные уведомления работают через WorkManager. FCM подключим на шаге 6 (в планах).")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ThemeRow(
+    title: String,
+    selected: Boolean,
+    onSelect: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(title)
+        RadioButton(selected = selected, onClick = onSelect)
     }
 }

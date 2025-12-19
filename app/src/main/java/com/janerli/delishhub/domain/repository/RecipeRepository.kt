@@ -3,6 +3,7 @@ package com.janerli.delishhub.domain.repository
 import com.janerli.delishhub.data.local.entity.MealPlanEntryEntity
 import com.janerli.delishhub.data.local.entity.RecipeEntity
 import com.janerli.delishhub.data.local.entity.ShoppingItemEntity
+import com.janerli.delishhub.data.local.entity.TagEntity
 import com.janerli.delishhub.data.local.model.RecipeFull
 import kotlinx.coroutines.flow.Flow
 
@@ -41,6 +42,7 @@ interface RecipeRepository {
 
     fun observeRecipeFull(recipeId: String): Flow<RecipeFull?>
     suspend fun getRecipeFull(recipeId: String): RecipeFull?
+
     suspend fun upsertRecipeFull(
         recipe: RecipeEntity,
         ingredients: List<com.janerli.delishhub.data.local.entity.IngredientEntity>,
@@ -50,12 +52,55 @@ interface RecipeRepository {
 
     suspend fun deleteRecipe(recipeId: String, hardDelete: Boolean)
 
-    // -------- Planner (Шаг 5.4) --------
-    fun observeMealPlanDay(userId: String, dateEpochDay: Long): Flow<List<MealPlanEntryEntity>>
-    suspend fun setMeal(userId: String, dateEpochDay: Long, mealType: String, recipeId: String, servings: Int = 1)
-    suspend fun removeMeal(userId: String, dateEpochDay: Long, mealType: String)
+    // -------- Tags --------
 
-    // -------- Shopping (Шаг 5.5) --------
+    fun observeAllTags(): Flow<List<TagEntity>>
+    suspend fun upsertTag(name: String)
+    suspend fun deleteTag(tagId: String)
+
+    /**
+     * Для фильтрации ленты: вернуть id рецептов, у которых есть хотя бы один из выбранных тегов.
+     */
+    fun observeRecipeIdsByTagIds(tagIds: List<String>): Flow<List<String>>
+
+    // -------- Planner --------
+
+    fun observeMealPlanDay(
+        userId: String,
+        dateEpochDay: Long
+    ): Flow<List<MealPlanEntryEntity>>
+
+    /**
+     * timeMinutes — минуты от начала суток (0..1439), null = время не задано.
+     * Если слот уже существует и timeMinutes == null — существующее время НЕ затираем.
+     */
+    suspend fun setMeal(
+        userId: String,
+        dateEpochDay: Long,
+        mealType: String,
+        recipeId: String,
+        servings: Int = 1,
+        timeMinutes: Int? = null
+    )
+
+    /**
+     * Обновление только времени слота (без смены рецепта).
+     */
+    suspend fun updateMealTime(
+        userId: String,
+        dateEpochDay: Long,
+        mealType: String,
+        timeMinutes: Int?
+    )
+
+    suspend fun removeMeal(
+        userId: String,
+        dateEpochDay: Long,
+        mealType: String
+    )
+
+    // -------- Shopping --------
+
     fun observeShopping(userId: String): Flow<List<ShoppingItemEntity>>
 
     suspend fun addShoppingManual(

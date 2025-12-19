@@ -4,23 +4,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.janerli.delishhub.core.session.SessionManager
 import com.janerli.delishhub.data.local.entity.RecipeEntity
+import com.janerli.delishhub.data.local.entity.TagEntity
 import com.janerli.delishhub.domain.repository.RecipeRepository
 import com.janerli.delishhub.feature.recipes.ui.RecipeCardUi
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 
-/**
- * Шаг 5.1 (под твой проект):
- * - Берём список рецептов из Room через repository.observeCatalog(...)
- * - Берём список избранного через repository.observeFavorites(...)
- * - Склеиваем в RecipeCardUi с корректным isFavorite
- *
- * Фильтры/сортировка пока остаются на UI-уровне (как у тебя уже сделано).
- */
 class RecipesViewModel(
     private val repository: RecipeRepository,
     private val isMyMode: Boolean
@@ -28,6 +25,29 @@ class RecipesViewModel(
 
     private val sessionFlow = SessionManager.session
 
+    // ✅ все теги (для FiltersSheet)
+    val allTags: StateFlow<List<TagEntity>> =
+        repository.observeAllTags()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ✅ выбранные теги (для получения recipeIds)
+    private val _selectedTagIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedTagIds: StateFlow<Set<String>> = _selectedTagIds.asStateFlow()
+
+    fun setSelectedTagIds(ids: Set<String>) {
+        _selectedTagIds.value = ids
+    }
+
+    // ✅ recipeIds подходящих по тегам (OR-логика)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val tagMatchedRecipeIds: StateFlow<Set<String>> =
+        _selectedTagIds.flatMapLatest { ids ->
+            if (ids.isEmpty()) flowOf(emptySet())
+            else repository.observeRecipeIdsByTagIds(ids.toList())
+                .flatMapLatest { list -> flowOf(list.toSet()) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val baseRecipesFlow = sessionFlow.flatMapLatest { session ->
         repository.observeCatalog(
             ownerId = session.userId,
@@ -37,6 +57,7 @@ class RecipesViewModel(
         )
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val favoritesFlow = sessionFlow.flatMapLatest { session ->
         repository.observeFavorites(
             userId = session.userId,
@@ -46,8 +67,10 @@ class RecipesViewModel(
     }
 
     val cards: StateFlow<List<RecipeCardUi>> =
-        combine(baseRecipesFlow, favoritesFlow) { recipes: List<RecipeEntity>, favs: List<RecipeEntity> ->
+        combine(sessionFlow, baseRecipesFlow, favoritesFlow) { session, recipes: List<RecipeEntity>, favs: List<RecipeEntity> ->
             val favSet = favs.asSequence().map { it.id }.toHashSet()
+            val myId = session.userId
+            val isGuest = session.isGuest
 
             recipes.map { r ->
                 RecipeCardUi(
@@ -55,7 +78,11 @@ class RecipesViewModel(
                     title = r.title,
                     cookTimeMin = r.cookTimeMin,
                     difficulty = r.difficulty,
-                    isFavorite = favSet.contains(r.id)
+                    isFavorite = favSet.contains(r.id),
+                    imageUrl = r.mainImageUrl,
+                    ownerId = r.ownerId,
+                    isPublic = r.isPublic,
+                    isMine = !isGuest && r.ownerId == myId
                 )
             }
         }.stateIn(

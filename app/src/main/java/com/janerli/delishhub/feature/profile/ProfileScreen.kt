@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
@@ -215,7 +217,7 @@ fun ProfileScreen(navController: NavHostController) {
                             modifier = Modifier.fillMaxWidth(),
                             onClick = { navController.navigate(Routes.LOGIN) }
                         ) {
-                            Icon(Icons.Filled.Login, contentDescription = null)
+                            Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null)
                             Text(" Войти")
                         }
                     }
@@ -231,7 +233,7 @@ fun ProfileScreen(navController: NavHostController) {
                             }
                         }
                     ) {
-                        Icon(Icons.Filled.Logout, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
                         Text(" Выйти")
                     }
                 }

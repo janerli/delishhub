@@ -4,8 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -17,7 +17,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun RecipesTopControls(
     onOpenFilters: () -> Unit,
-    onOpenSort: () -> Unit
+    onOpenSort: () -> Unit,
+    selectedTagsCount: Int = 0
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -25,11 +26,16 @@ fun RecipesTopControls(
     ) {
         AssistChip(
             onClick = onOpenFilters,
-            label = { Text("Фильтры") },
+            label = {
+                Text(
+                    if (selectedTagsCount > 0) "Фильтры • Теги: $selectedTagsCount"
+                    else "Фильтры"
+                )
+            },
             leadingIcon = { Icon(Icons.Filled.FilterList, contentDescription = null) }
         )
         IconButton(onClick = onOpenSort) {
-            Icon(Icons.Filled.Sort, contentDescription = "Sort")
+            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
         }
     }
 }

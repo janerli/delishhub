@@ -6,6 +6,7 @@ import com.janerli.delishhub.core.session.SessionManager
 import com.janerli.delishhub.data.local.entity.RecipeEntity
 import com.janerli.delishhub.domain.repository.RecipeRepository
 import com.janerli.delishhub.feature.recipes.ui.RecipeCardUi
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -17,6 +18,7 @@ class FavoritesViewModel(
     private val repository: RecipeRepository
 ) : ViewModel() {
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val favoritesFlow = SessionManager.session.flatMapLatest { session ->
         repository.observeFavorites(
             userId = session.userId,

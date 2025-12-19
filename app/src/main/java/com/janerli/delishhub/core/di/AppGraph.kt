@@ -24,9 +24,9 @@ object AppGraph {
 
     private val db: AppDatabase by lazy {
         check(initialized) { "AppGraph.init(context) must be called before using repositories" }
+
         Room.databaseBuilder(appContext, AppDatabase::class.java, DbConfig.DB_NAME)
-            // для учебного проекта можно так (если меняешь схему)
-            .fallbackToDestructiveMigration()
+            .addMigrations(AppDatabase.MIGRATION_7_8)
             .build()
     }
 
@@ -35,7 +35,8 @@ object AppGraph {
             recipeDao = db.recipeDao(),
             favoriteDao = db.favoriteDao(),
             mealPlanDao = db.mealPlanDao(),
-            shoppingDao = db.shoppingDao()
+            shoppingDao = db.shoppingDao(),
+            tagDao = db.tagDao()
         )
     }
 }

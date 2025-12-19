@@ -180,4 +180,14 @@ interface RecipeDao {
             upsertTagRefs(tagIds.map { RecipeTagCrossRef(recipeId = recipe.id, tagId = it) })
         }
     }
+
+    // ✅ НОВОЕ: ids рецептов, у которых есть хотя бы один из выбранных тегов
+    @Query(
+        """
+        SELECT DISTINCT recipeId
+        FROM recipe_tag_cross_ref
+        WHERE tagId IN (:tagIds)
+        """
+    )
+    fun observeRecipeIdsByTagIds(tagIds: List<String>): Flow<List<String>>
 }

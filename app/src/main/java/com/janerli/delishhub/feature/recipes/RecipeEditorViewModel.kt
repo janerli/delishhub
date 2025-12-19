@@ -6,6 +6,7 @@ import com.janerli.delishhub.core.session.SessionManager
 import com.janerli.delishhub.data.local.entity.IngredientEntity
 import com.janerli.delishhub.data.local.entity.RecipeEntity
 import com.janerli.delishhub.data.local.entity.StepEntity
+import com.janerli.delishhub.data.local.entity.TagEntity
 import com.janerli.delishhub.data.local.model.RecipeFull
 import com.janerli.delishhub.domain.repository.RecipeRepository
 import com.janerli.delishhub.feature.recipes.ui.IngredientUi
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class RecipeEditorViewModel(
@@ -22,49 +24,76 @@ class RecipeEditorViewModel(
     private val recipeId: String?
 ) : ViewModel() {
 
+    private val stableId: String = recipeId ?: UUID.randomUUID().toString()
+
     data class UiState(
         val loading: Boolean = false,
         val saving: Boolean = false,
         val saved: Boolean = false,
         val error: String? = null,
 
+        // ✅ стабильный id для нового рецепта (чтобы фото не терялось)
+        val draftId: String = "",
+
         val title: String = "",
         val description: String = "",
         val cookTime: String = "20",
         val difficulty: Float = 2f,
 
+        // ✅ публичность
+        val isPublic: Boolean = false,
+
+        // ✅ главное фото (локально: file://...)
+        val mainImageUrl: String? = null,
+
         val titleError: String? = null,
 
-        val ingredients: List<IngredientUi> = listOf(IngredientUi(id = "i1", name = "", amount = "", unit = "")),
-        val steps: List<StepUi> = listOf(StepUi(id = "s1", text = "")),
+        val ingredients: List<IngredientUi> = listOf(
+            IngredientUi(id = "i1", name = "", amount = "", unit = "")
+        ),
+        val steps: List<StepUi> = listOf(
+            StepUi(id = "s1", text = "")
+        ),
 
-        // для корректного updatedAt/createdAt при редактировании
+        // ✅ Теги
+        val allTags: List<TagEntity> = emptyList(),
+        val selectedTagIds: Set<String> = emptySet(),
+
         val existingCreatedAt: Long? = null
     )
 
-    private val _state = MutableStateFlow(UiState(loading = recipeId != null))
+    private val _state = MutableStateFlow(
+        UiState(
+            loading = recipeId != null,
+            draftId = stableId
+        )
+    )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
+        // ✅ всегда слушаем список тегов (нужно и для create, и для edit)
+        viewModelScope.launch {
+            repository.observeAllTags().collect { tags ->
+                _state.value = _state.value.copy(allTags = tags)
+            }
+        }
+
         if (recipeId != null) {
             viewModelScope.launch {
-                runCatching {
-                    repository.getRecipeFull(recipeId)
-                }.onSuccess { full ->
-                    if (full == null) {
+                runCatching { repository.getRecipeFull(recipeId) }
+                    .onSuccess { full ->
+                        if (full == null) {
+                            _state.value = _state.value.copy(loading = false, error = "Рецепт не найден")
+                        } else {
+                            applyFullToState(full)
+                        }
+                    }
+                    .onFailure {
                         _state.value = _state.value.copy(
                             loading = false,
-                            error = "Рецепт не найден"
+                            error = it.message ?: "Ошибка загрузки рецепта"
                         )
-                    } else {
-                        applyFullToState(full)
                     }
-                }.onFailure {
-                    _state.value = _state.value.copy(
-                        loading = false,
-                        error = it.message ?: "Ошибка загрузки рецепта"
-                    )
-                }
             }
         }
     }
@@ -79,6 +108,13 @@ class RecipeEditorViewModel(
             description = r.description,
             cookTime = r.cookTimeMin.toString(),
             difficulty = r.difficulty.coerceIn(1, 5).toFloat(),
+
+            isPublic = r.isPublic,
+            mainImageUrl = r.mainImageUrl,
+
+            // ✅ теги
+            selectedTagIds = full.tags.map { it.id }.toSet(),
+
             existingCreatedAt = r.createdAt,
             ingredients = full.ingredients
                 .sortedBy { it.position }
@@ -87,7 +123,7 @@ class RecipeEditorViewModel(
                         id = it.id,
                         name = it.name,
                         amount = it.amount?.let { a ->
-                            val isInt = kotlin.math.abs(a - a.toInt()) < 1e-9
+                            val isInt = abs(a - a.toInt()) < 1e-9
                             if (isInt) a.toInt().toString() else a.toString()
                         } ?: "",
                         unit = it.unit.orEmpty()
@@ -100,6 +136,22 @@ class RecipeEditorViewModel(
                 .ifEmpty { listOf(StepUi(id = "s1", text = "")) }
         )
     }
+
+    // -------- Теги --------
+
+    fun toggleTag(tagId: String) {
+        val set = _state.value.selectedTagIds.toMutableSet()
+        if (set.contains(tagId)) set.remove(tagId) else set.add(tagId)
+        _state.value = _state.value.copy(selectedTagIds = set)
+    }
+
+    fun addTag(name: String) {
+        viewModelScope.launch {
+            repository.upsertTag(name)
+        }
+    }
+
+    // -------- Поля --------
 
     fun setTitle(v: String) {
         _state.value = _state.value.copy(title = v, titleError = null)
@@ -117,16 +169,23 @@ class RecipeEditorViewModel(
         _state.value = _state.value.copy(difficulty = v)
     }
 
+    fun setPublic(v: Boolean) {
+        _state.value = _state.value.copy(isPublic = v)
+    }
+
+    fun setMainImageUrl(url: String?) {
+        _state.value = _state.value.copy(mainImageUrl = url)
+    }
+
+    fun removeMainPhoto() {
+        _state.value = _state.value.copy(mainImageUrl = null)
+    }
+
+    // -------- Ингредиенты --------
+
     fun addIngredient() {
         val list = _state.value.ingredients.toMutableList()
-        list.add(
-            IngredientUi(
-                id = "i${System.currentTimeMillis()}",
-                name = "",
-                amount = "",
-                unit = ""
-            )
-        )
+        list.add(IngredientUi(id = "i${System.currentTimeMillis()}", name = "", amount = "", unit = ""))
         _state.value = _state.value.copy(ingredients = list)
     }
 
@@ -143,12 +202,13 @@ class RecipeEditorViewModel(
             list.removeAll { it.id == id }
             _state.value = _state.value.copy(ingredients = list)
         } else {
-            // оставить 1 строку, просто очистить
             _state.value = _state.value.copy(
                 ingredients = list.map { if (it.id == id) it.copy(name = "", amount = "", unit = "") else it }
             )
         }
     }
+
+    // -------- Шаги --------
 
     fun addStep() {
         val list = _state.value.steps.toMutableList()
@@ -175,6 +235,8 @@ class RecipeEditorViewModel(
         }
     }
 
+    // -------- UX --------
+
     fun clearError() {
         _state.value = _state.value.copy(error = null)
     }
@@ -200,7 +262,7 @@ class RecipeEditorViewModel(
             val now = System.currentTimeMillis()
             val ownerId = SessionManager.session.value.userId
 
-            val id = recipeId ?: UUID.randomUUID().toString()
+            val id = recipeId ?: s.draftId
             val createdAt = s.existingCreatedAt ?: now
 
             // syncStatus: created/updated (для будущего Firestore)
@@ -213,6 +275,10 @@ class RecipeEditorViewModel(
                 description = s.description.trim(),
                 cookTimeMin = cookTimeMin,
                 difficulty = difficultyInt,
+
+                isPublic = s.isPublic,
+                mainImageUrl = s.mainImageUrl,
+
                 createdAt = createdAt,
                 updatedAt = now,
                 syncStatus = syncStatus
@@ -255,7 +321,7 @@ class RecipeEditorViewModel(
                     recipe = recipe,
                     ingredients = ingredients,
                     steps = steps,
-                    tagIds = emptyList()
+                    tagIds = s.selectedTagIds.toList()
                 )
             }.onSuccess {
                 _state.value = _state.value.copy(saving = false, saved = true)

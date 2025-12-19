@@ -2,12 +2,15 @@ package com.janerli.delishhub.feature.recipes.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -16,11 +19,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.janerli.delishhub.data.local.entity.TagEntity
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FiltersSheet(
     current: RecipesFiltersUi,
+    allTags: List<TagEntity>,
     onApply: (RecipesFiltersUi) -> Unit,
     onReset: () -> Unit
 ) {
@@ -29,6 +34,9 @@ fun FiltersSheet(
     val minDiff = remember { mutableStateOf(current.minDifficulty?.toString().orEmpty()) }
     val maxDiff = remember { mutableStateOf(current.maxDifficulty?.toString().orEmpty()) }
     val onlyFav = remember { mutableStateOf(current.onlyFavorites) }
+
+    // ✅ теги
+    val selectedTagIds = remember { mutableStateOf(current.tagIds.toMutableSet()) }
 
     Column(
         modifier = Modifier
@@ -53,7 +61,7 @@ fun FiltersSheet(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Divider()
+        HorizontalDivider()
 
         OutlinedTextField(
             value = minDiff.value,
@@ -70,7 +78,7 @@ fun FiltersSheet(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Divider()
+        HorizontalDivider()
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -83,7 +91,36 @@ fun FiltersSheet(
             )
         }
 
-        Divider()
+        HorizontalDivider()
+
+        Text("Теги (можно несколько)")
+
+        val sorted = allTags.sortedBy { it.name.lowercase() }
+        if (sorted.isEmpty()) {
+            Text("Тегов пока нет")
+        } else {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                sorted.forEach { tag ->
+                    val selected = selectedTagIds.value.contains(tag.id)
+
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            val set = selectedTagIds.value
+                            if (selected) set.remove(tag.id) else set.add(tag.id)
+                            selectedTagIds.value = set
+                        },
+                        label = { Text(tag.name) }
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider()
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -106,7 +143,8 @@ fun FiltersSheet(
                         maxTime = toIntOrNull(maxTime.value),
                         minDifficulty = toIntOrNull(minDiff.value),
                         maxDifficulty = toIntOrNull(maxDiff.value),
-                        onlyFavorites = onlyFav.value
+                        onlyFavorites = onlyFav.value,
+                        tagIds = selectedTagIds.value.toSet()
                     )
                     onApply(applied)
                 }

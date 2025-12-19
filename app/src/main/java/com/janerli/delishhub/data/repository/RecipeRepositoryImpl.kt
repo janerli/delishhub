@@ -4,10 +4,12 @@ import com.janerli.delishhub.data.local.dao.FavoriteDao
 import com.janerli.delishhub.data.local.dao.MealPlanDao
 import com.janerli.delishhub.data.local.dao.RecipeDao
 import com.janerli.delishhub.data.local.dao.ShoppingDao
+import com.janerli.delishhub.data.local.dao.TagDao
 import com.janerli.delishhub.data.local.entity.FavoriteEntity
 import com.janerli.delishhub.data.local.entity.MealPlanEntryEntity
 import com.janerli.delishhub.data.local.entity.RecipeEntity
 import com.janerli.delishhub.data.local.entity.ShoppingItemEntity
+import com.janerli.delishhub.data.local.entity.TagEntity
 import com.janerli.delishhub.data.local.model.RecipeFull
 import com.janerli.delishhub.data.sync.SyncStatus
 import com.janerli.delishhub.domain.repository.RecipeRepository
@@ -19,7 +21,8 @@ class RecipeRepositoryImpl(
     private val recipeDao: RecipeDao,
     private val favoriteDao: FavoriteDao,
     private val mealPlanDao: MealPlanDao,
-    private val shoppingDao: ShoppingDao
+    private val shoppingDao: ShoppingDao,
+    private val tagDao: TagDao
 ) : RecipeRepository {
 
     override fun observeCatalog(
@@ -72,13 +75,12 @@ class RecipeRepositoryImpl(
         val isFav = favoriteDao.isFavorite(userId, recipeId)
 
         if (isFav) {
-            // ✅ soft delete (у тебя метод называется removeFavorite, но внутри он должен делать UPDATE syncStatus=3)
+            // ✅ soft delete
             favoriteDao.removeFavorite(userId, recipeId, now)
         } else {
             val existing = favoriteDao.getNow(userId, recipeId)
             val createdAt = existing?.createdAt ?: now
 
-            // ✅ добавляем/восстанавливаем с CREATED (попадёт в pending -> воркер отправит на сервер)
             val entity = FavoriteEntity(
                 userId = userId,
                 recipeId = recipeId,
@@ -126,6 +128,34 @@ class RecipeRepositoryImpl(
         else recipeDao.softDeleteRecipe(recipeId, System.currentTimeMillis())
     }
 
+    // ---------------- TAGS ----------------
+
+    override fun observeAllTags(): Flow<List<TagEntity>> =
+        tagDao.observeAll()
+
+    override suspend fun upsertTag(name: String) {
+        val clean = name.trim()
+        if (clean.isBlank()) return
+
+        // не создаём дубль по имени
+        val existing = tagDao.getByNameNow(clean)
+        if (existing != null) return
+
+        tagDao.insertIgnore(
+            TagEntity(
+                id = UUID.randomUUID().toString(),
+                name = clean
+            )
+        )
+    }
+
+    override suspend fun deleteTag(tagId: String) {
+        tagDao.deleteById(tagId)
+    }
+
+    override fun observeRecipeIdsByTagIds(tagIds: List<String>): Flow<List<String>> =
+        recipeDao.observeRecipeIdsByTagIds(tagIds)
+
     // -------- Planner --------
 
     override fun observeMealPlanDay(userId: String, dateEpochDay: Long): Flow<List<MealPlanEntryEntity>> =
@@ -136,7 +166,8 @@ class RecipeRepositoryImpl(
         dateEpochDay: Long,
         mealType: String,
         recipeId: String,
-        servings: Int
+        servings: Int,
+        timeMinutes: Int?
     ) {
         val now = System.currentTimeMillis()
         val existing = mealPlanDao.getSlot(userId, dateEpochDay, mealType)
@@ -148,11 +179,15 @@ class RecipeRepositoryImpl(
             else -> SyncStatus.UPDATED
         }
 
+        // ✅ если время не передали — НЕ затираем существующее
+        val resolvedTime = timeMinutes ?: existing?.timeMinutes
+
         val entry = MealPlanEntryEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
             userId = userId,
             dateEpochDay = dateEpochDay,
             mealType = mealType,
+            timeMinutes = resolvedTime,
             recipeId = recipeId,
             servings = servings,
             createdAt = existing?.createdAt ?: now,
@@ -160,6 +195,33 @@ class RecipeRepositoryImpl(
             syncStatus = status
         )
         mealPlanDao.upsert(entry)
+    }
+
+    override suspend fun updateMealTime(
+        userId: String,
+        dateEpochDay: Long,
+        mealType: String,
+        timeMinutes: Int?
+    ) {
+        val now = System.currentTimeMillis()
+        val existing = mealPlanDao.getSlot(userId, dateEpochDay, mealType) ?: return
+
+        // не обновляем “удалённые” (пусть сначала назначат рецепт заново)
+        if (existing.syncStatus == SyncStatus.DELETED) return
+
+        val nextStatus = when (existing.syncStatus) {
+            SyncStatus.CREATED -> SyncStatus.CREATED
+            SyncStatus.DELETED -> SyncStatus.UPDATED
+            else -> SyncStatus.UPDATED
+        }
+
+        mealPlanDao.upsert(
+            existing.copy(
+                timeMinutes = timeMinutes,
+                updatedAt = now,
+                syncStatus = nextStatus
+            )
+        )
     }
 
     override suspend fun removeMeal(userId: String, dateEpochDay: Long, mealType: String) {

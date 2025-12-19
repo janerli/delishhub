@@ -12,7 +12,20 @@
           "package_name": "com.janerli.delishhub"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "433786748186-8iq8etbhdlp4pfscrvfiqp35rs8u8tqq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.janerli.delishhub",
+            "certificate_hash": "e6ca60e9400638cc7b7b1d0b97e07cf262c98414"
+          }
+        },
+        {
+          "client_id": "433786748186-nuef5s0kbtup40028dlpe4rgglmves8m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyD4R5_MSfi33jk3m8wVec6t7PE0ztiPWpA"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "433786748186-nuef5s0kbtup40028dlpe4rgglmves8m.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

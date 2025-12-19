@@ -4,9 +4,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -58,122 +64,125 @@ fun RegisterScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Регистрация", style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(16.dp))
 
-            OutlinedTextField(
-                value = name,
-                onValueChange = {
-                    name = it
-                    error = null
-                },
-                label = { Text("Имя (опционально)") },
-                singleLine = true
-            )
+            Card(
+                modifier = Modifier.widthIn(max = 420.dp),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Регистрация", style = MaterialTheme.typography.headlineSmall)
 
-            Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it; error = null },
+                        label = { Text("Имя (опционально)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-            OutlinedTextField(
-                value = email,
-                onValueChange = {
-                    email = it
-                    error = null
-                },
-                label = { Text("Email") },
-                singleLine = true
-            )
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it; error = null },
+                        label = { Text("Email") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-            Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it; error = null },
+                        label = { Text("Пароль") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-            OutlinedTextField(
-                value = password,
-                onValueChange = {
-                    password = it
-                    error = null
-                },
-                label = { Text("Пароль") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
-            )
-
-            if (error != null) {
-                Spacer(Modifier.height(10.dp))
-                Text(error!!, color = MaterialTheme.colorScheme.error)
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Button(
-                enabled = !loading,
-                onClick = {
-                    val e = email.trim()
-                    val p = password
-
-                    if (e.isEmpty() || !e.contains("@")) {
-                        error = "Введите корректный email"
-                        return@Button
-                    }
-                    if (p.length < 6) {
-                        error = "Пароль минимум 6 символов"
-                        return@Button
+                    if (error != null) {
+                        Text(error!!, color = MaterialTheme.colorScheme.error)
                     }
 
-                    loading = true
-                    scope.launch {
-                        try {
-                            FirebaseAuth.getInstance()
-                                .createUserWithEmailAndPassword(e, p)
-                                .await()
+                    Spacer(Modifier.height(6.dp))
 
-                            val fbUser = FirebaseAuth.getInstance().currentUser
+                    Button(
+                        enabled = !loading,
+                        onClick = {
+                            val e = email.trim()
+                            val p = password
 
-                            val cleanName = name.trim()
-                            if (fbUser != null && cleanName.isNotEmpty()) {
+                            if (e.isEmpty() || !e.contains("@")) {
+                                error = "Введите корректный email"
+                                return@Button
+                            }
+                            if (p.length < 6) {
+                                error = "Пароль минимум 6 символов"
+                                return@Button
+                            }
+
+                            loading = true
+                            scope.launch {
                                 try {
-                                    fbUser.updateProfile(
-                                        UserProfileChangeRequest.Builder()
-                                            .setDisplayName(cleanName)
-                                            .build()
-                                    ).await()
-                                } catch (_: Throwable) {
-                                    // не критично
+                                    FirebaseAuth.getInstance()
+                                        .createUserWithEmailAndPassword(e, p)
+                                        .await()
+
+                                    val fbUser = FirebaseAuth.getInstance().currentUser
+                                    val cleanName = name.trim()
+
+                                    if (fbUser != null && cleanName.isNotEmpty()) {
+                                        try {
+                                            fbUser.updateProfile(
+                                                UserProfileChangeRequest.Builder()
+                                                    .setDisplayName(cleanName)
+                                                    .build()
+                                            ).await()
+                                        } catch (_: Throwable) {
+                                            // не критично
+                                        }
+                                    }
+
+                                    if (fbUser != null) SessionManager.setFromFirebase(fbUser) else SessionManager.setGuest()
+
+                                    // ✅ запускаем ВСЕ синки
+                                    FavoriteSyncScheduler.enqueueOneTime(context)
+                                    FavoriteSyncScheduler.schedulePeriodic(context)
+
+                                    ShoppingSyncScheduler.enqueueOneTime(context)
+                                    ShoppingSyncScheduler.schedulePeriodic(context)
+
+                                    MealPlanSyncScheduler.enqueueOneTime(context)
+                                    MealPlanSyncScheduler.schedulePeriodic(context)
+
+                                    RecipeSyncScheduler.enqueueOneTime(context)
+                                    RecipeSyncScheduler.schedulePeriodic(context)
+
+                                    onRegistered()
+                                } catch (t: Throwable) {
+                                    error = t.message ?: "Ошибка регистрации"
+                                } finally {
+                                    loading = false
                                 }
                             }
-
-                            if (fbUser != null) {
-                                // ✅ КРИТИЧНО: обновляем session сразу
-                                SessionManager.setFromFirebase(fbUser)
-                            } else {
-                                SessionManager.setGuest()
-                            }
-
-                            // ✅ запускаем ВСЕ синки
-                            FavoriteSyncScheduler.enqueueOneTime(context)
-                            FavoriteSyncScheduler.schedulePeriodic(context)
-
-                            ShoppingSyncScheduler.enqueueOneTime(context)
-                            ShoppingSyncScheduler.schedulePeriodic(context)
-
-                            MealPlanSyncScheduler.enqueueOneTime(context)
-                            MealPlanSyncScheduler.schedulePeriodic(context)
-
-                            RecipeSyncScheduler.enqueueOneTime(context)
-                            RecipeSyncScheduler.schedulePeriodic(context)
-
-                            onRegistered()
-                        } catch (t: Throwable) {
-                            error = t.message ?: "Ошибка регистрации"
-                        } finally {
-                            loading = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(modifier = Modifier.height(18.dp))
+                            Text(" Создаём…")
+                        } else {
+                            Text("Зарегистрироваться")
                         }
                     }
-                }
-            ) {
-                Text(if (loading) "Создаём..." else "Зарегистрироваться")
-            }
 
-            Spacer(Modifier.height(10.dp))
-            TextButton(onClick = onBack, enabled = !loading) { Text("Назад") }
+                    TextButton(onClick = onBack, enabled = !loading) { Text("Назад") }
+                }
+            }
         }
     }
 }
